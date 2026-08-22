@@ -7,6 +7,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,21 @@ const CLI_BUILT = fs.existsSync(CLI);
 const TEST_TMP = path.resolve(HERE, '..', '..', '..', '..', '.tmp-2990', 'test-runtime');
 
 let child: ChildProcessWithoutNullStreams | undefined;
+
+// The localhost default binds 127.0.0.1 AND ::1 (dual loopback), but the ::1
+// bind is best-effort by design: on kernels without IPv6 (common in
+// containers) the server degrades to IPv4-only. Assert the dual-stack
+// contract only where the kernel can support it; CI ubuntu runners have ::1,
+// so the full contract stays enforced there.
+function ipv6LoopbackAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(0, '::1', () => {
+      probe.close(() => resolve(true));
+    });
+  });
+}
 
 afterEach(() => {
   if (child && child.exitCode === null && child.signalCode === null) {
@@ -66,13 +82,21 @@ async function postJson(port: number, endpoint: string, body: unknown, host = '1
 
 async function startHttpCli(port: number, tools: string): Promise<void> {
   fs.mkdirSync(TEST_TMP, { recursive: true });
+  // The server's pid file defaults to os.tmpdir()/claude-flow-mcp.pid.
+  // TEMP/TMP cover Windows; TMPDIR covers POSIX — without them a concurrent
+  // MCP server elsewhere on the machine shares the global /tmp pid file and
+  // "mcp start" refuses with "already running". A FRESH dir per spawn also
+  // avoids stale pid files from SIGKILLed children of earlier tests (whose
+  // pids can be recycled by unrelated live processes).
+  const runTmp = fs.mkdtempSync(path.join(TEST_TMP, 'run-'));
   child = spawn('node', [CLI, 'mcp', 'start', '-t', 'http', '--port', String(port)], {
     env: {
       ...process.env,
       CLAUDE_FLOW_MCP_TOOLS: tools,
       RUFLO_DAEMON_AUTOSTART: '0',
-      TEMP: TEST_TMP,
-      TMP: TEST_TMP,
+      TEMP: runTmp,
+      TMP: runTmp,
+      TMPDIR: runTmp,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -90,10 +114,13 @@ describe('MCP HTTP protocol and tool registry (#2990, end-to-end)', () => {
     const port = 34000 + Math.floor(Math.random() * 4000);
     await startHttpCli(port, 'all');
 
+    const hasIpv6 = await ipv6LoopbackAvailable();
     const health = await fetch(`http://127.0.0.1:${port}/health`);
     expect(health.status).toBe(200);
-    const ipv6Health = await fetch(`http://[::1]:${port}/health`);
-    expect(ipv6Health.status).toBe(200);
+    if (hasIpv6) {
+      const ipv6Health = await fetch(`http://[::1]:${port}/health`);
+      expect(ipv6Health.status).toBe(200);
+    }
 
     const initialized = await postJson(port, '/mcp', {
       jsonrpc: '2.0',
@@ -107,13 +134,14 @@ describe('MCP HTTP protocol and tool registry (#2990, end-to-end)', () => {
     });
     expect(initialized.result.protocolVersion).toBe('2025-11-25');
 
-    // Initialize through IPv4, then call the alternate RPC path through IPv6.
+    // Initialize through IPv4, then call the alternate RPC path through IPv6
+    // (falls back to IPv4 on kernels without ::1 — still exercises /rpc).
     // Independent server instances would reject this as an uninitialized session.
     const listed = await postJson(port, '/rpc', {
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/list',
-    }, '::1');
+    }, hasIpv6 ? '::1' : '127.0.0.1');
     const names = listed.result.tools.map((tool: { name: string }) => tool.name);
     expect(names.length).toBeGreaterThan(300);
     expect(names).toEqual(expect.arrayContaining([

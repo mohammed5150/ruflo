@@ -31,8 +31,12 @@
 #   else); ruvector-plugins example fixed (duplicate exports broke the
 #   module parse; HookEvent.PostToolCall does not exist) and
 #   swarm-integration's stale delta-vs-target assertion corrected.
-v3/@claude-flow/cli/__tests__/agenticow-tools.test.ts
-v3/@claude-flow/cli/__tests__/mcp-http-protocol-tools-2990.test.ts
-v3/@claude-flow/cli/__tests__/mcp-tool-filter-2726.test.ts
-v3/@claude-flow/cli/__tests__/pq-validation.test.ts
-v3/@claude-flow/cli/__tests__/proxy-extract-archive.test.ts
+# 2026-08-22 (6th pass): BASELINE EMPTY. The last five fixed for real:
+#   mcp-http-protocol-2990 (uncaught ws 'error' killed the process; ::1
+#   additionalHosts now best-effort with the primary still throwing),
+#   agenticow-tools (input validation now precedes the optional-dep gate —
+#   traversal attempts no longer dissolve into degraded success),
+#   mcp-tool-filter-2726 + pq-validation (wrong paths resolved from cwd /
+#   a ../../ that never resolved), proxy-extract-archive (racy doMock →
+#   hoisted vi.mock). Keep this file: the ratchet requires it, and any
+#   future entry means a NEW regression — fix it instead of listing it.

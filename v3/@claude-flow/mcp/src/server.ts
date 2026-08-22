@@ -240,9 +240,25 @@ export class MCPServer extends EventEmitter implements IMCPServer {
 
       const started: ITransport[] = [];
       try {
-        for (const transport of transports) {
-          await transport.start();
-          started.push(transport);
+        for (const [index, transport] of transports.entries()) {
+          try {
+            await transport.start();
+            started.push(transport);
+          } catch (error) {
+            // additionalHosts are best-effort: when the kernel lacks the
+            // address family (e.g. no IPv6 for the ::1 dual-loopback bind in
+            // containers), degrade to the primary host instead of failing —
+            // the primary transport (index 0) still throws.
+            const code = (error as NodeJS.ErrnoException | undefined)?.code;
+            if (index > 0 && (code === 'EAFNOSUPPORT' || code === 'EADDRNOTAVAIL')) {
+              this.logger.warn('Skipping additional transport host: address family unavailable', {
+                host: hosts[index],
+                code,
+              });
+              continue;
+            }
+            throw error;
+          }
         }
       } catch (error) {
         await Promise.all(started.map((transport) => transport.stop()));

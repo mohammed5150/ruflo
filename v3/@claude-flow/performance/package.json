@@ -10,9 +10,9 @@
     "./benchmarks/*": "./benchmarks/*.js"
   },
   "scripts": {
-    "bench": "vitest bench",
-    "bench:attention": "vitest bench benchmarks/attention/",
-    "bench:startup": "vitest bench benchmarks/startup/",
+    "bench": "npm run bench:attention && npm run bench:startup",
+    "bench:attention": "tsx benchmarks/attention/multi-head-attention.bench.ts && tsx benchmarks/attention/memory-efficiency.bench.ts",
+    "bench:startup": "tsx benchmarks/startup/agent-spawn.bench.ts && tsx benchmarks/startup/cli-cold-start.bench.ts && tsx benchmarks/startup/cli-warm-start.bench.ts && tsx benchmarks/startup/mcp-server-init.bench.ts",
     "build": "tsc"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "@ruvector/sona": "latest"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "vitest": "^4.1.0"
   },
   "publishConfig": {

@@ -87,6 +87,15 @@ export class HttpTransport extends EventEmitter implements ITransport {
       path: '/ws',
     });
 
+    // ws re-emits the underlying HTTP server's 'error' events on the
+    // WebSocketServer. Without a handler, a listen failure (e.g. EAFNOSUPPORT
+    // binding ::1 on an IPv6-less kernel) becomes an uncaught 'error' event
+    // that kills the whole process before start() can reject cleanly.
+    this.wss.on('error', (error) => {
+      this.logger.error('WebSocketServer error', { error });
+      this.errors++;
+    });
+
     this.setupWebSocketHandlers();
 
     await new Promise<void>((resolve, reject) => {
