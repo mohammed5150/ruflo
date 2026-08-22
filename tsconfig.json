@@ -28,11 +28,29 @@
   "include": [
     "v3/**/*.ts"
   ],
+  // Scope: the live v3/@claude-flow/* sources. Everything excluded below is
+  // code no root pipeline compiles: test files, never-built examples, the
+  // dead pre-workspace trees (v3/src, v3/mcp, v3/index.ts, v3/swarm.config.ts
+  // — the latter imports v3/shared/types which no longer exists), Deno edge
+  // functions (v3/goal_ui), experimental plugins with their own toolchains
+  // (v3/plugins — gastown-bridge is a nested Cargo/WASM workspace), and
+  // v3/vitest.config.ts (typed against v3's vitest 4; root installs 3.x).
   "exclude": [
     "node_modules",
     "dist",
+    "**/dist/**",
     "**/*.test.ts",
     "**/*.bench.ts",
-    "v3/__tests__/**/*.ts"
+    "**/__tests__/**",
+    "**/examples/**",
+    "v3/__tests__/**/*.ts",
+    "v3/src/**",
+    "v3/mcp/**",
+    "v3/index.ts",
+    "v3/swarm.config.ts",
+    "v3/vitest.config.ts",
+    "v3/goal_ui/**",
+    "v3/plugins/**",
+    "v3/@claude-flow/memory/benchmarks/**"
   ]
 }

@@ -18,7 +18,10 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import initSqlJs from 'sql.js';
+// sql.js types are `export =`; deriving Database from the default import's
+// return type resolves under both node16 and bundler moduleResolution.
+type SqlJsDatabase = InstanceType<Awaited<ReturnType<typeof initSqlJs>>['Database']>;
 import { DomainEvent, AllDomainEvents } from './domain-events.js';
 
 // =============================================================================

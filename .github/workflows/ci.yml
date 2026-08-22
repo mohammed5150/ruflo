@@ -39,10 +39,6 @@ jobs:
       - name: Lint code
         run: npm run lint
 
-      - name: Type check
-        run: npm run typecheck || echo "⚠️ Type checking skipped (TypeScript compiler crash)"
-        continue-on-error: true
-
       - name: Check for outdated dependencies
         run: npm outdated || true
         continue-on-error: true
@@ -87,6 +83,13 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm -r build
+
+      - name: Type check (whole tree, enforcing)
+        # Root `tsc --noEmit` covers the live v3/@claude-flow sources (scope
+        # documented in tsconfig.json). It lives in this job, not `security`,
+        # because @types resolve out of the v3 pnpm install performed above.
+        # New type errors fail the build.
+        run: npm run typecheck
 
       - name: Run all tests
         # #3030: the historical suite has known debt, but new failing files
