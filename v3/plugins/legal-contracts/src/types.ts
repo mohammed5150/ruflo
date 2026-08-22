@@ -648,7 +648,7 @@ export interface AuditLogEntry {
  * Input schema for legal/clause-extract
  */
 export const ClauseExtractInputSchema = z.object({
-  document: z.string().max(10_000_000, 'Document size exceeds 10MB limit'),
+  document: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
   clauseTypes: z.array(ClauseType).optional(),
   jurisdiction: z.string().max(50).default('US'),
   includePositions: z.boolean().default(true),
@@ -665,7 +665,7 @@ export type ClauseExtractInput = z.infer<typeof ClauseExtractInputSchema>;
  * Input schema for legal/risk-assess
  */
 export const RiskAssessInputSchema = z.object({
-  document: z.string().max(10_000_000),
+  document: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
   partyRole: PartyRole,
   riskCategories: z.array(RiskCategory).optional(),
   industryContext: z.string().max(200).optional(),
@@ -683,8 +683,8 @@ export type RiskAssessInput = z.infer<typeof RiskAssessInputSchema>;
  * Input schema for legal/contract-compare
  */
 export const ContractCompareInputSchema = z.object({
-  baseDocument: z.string().max(10_000_000),
-  compareDocument: z.string().max(10_000_000),
+  baseDocument: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
+  compareDocument: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
   comparisonMode: ComparisonMode.default('full'),
   highlightChanges: z.boolean().default(true),
   generateRedline: z.boolean().default(false),
@@ -701,7 +701,7 @@ export type ContractCompareInput = z.infer<typeof ContractCompareInputSchema>;
  * Input schema for legal/obligation-track
  */
 export const ObligationTrackInputSchema = z.object({
-  document: z.string().max(10_000_000),
+  document: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
   party: z.string().max(200).optional(),
   timeframe: z.string().max(50).optional(),
   obligationTypes: z.array(ObligationType).optional(),
@@ -719,8 +719,8 @@ export type ObligationTrackInput = z.infer<typeof ObligationTrackInputSchema>;
  * Input schema for legal/playbook-match
  */
 export const PlaybookMatchInputSchema = z.object({
-  document: z.string().max(10_000_000),
-  playbook: z.string().max(1_000_000, 'Playbook size exceeds 1MB limit'),
+  document: z.string().min(1, 'Document must not be empty').max(10_000_000, 'Document size exceeds 10MB limit'),
+  playbook: z.string().min(1, 'Playbook must not be empty').max(1_000_000, 'Playbook size exceeds 1MB limit'),
   strictness: PlaybookStrictness.default('moderate'),
   suggestAlternatives: z.boolean().default(true),
   prioritizeClauses: z.array(ClauseType).optional(),

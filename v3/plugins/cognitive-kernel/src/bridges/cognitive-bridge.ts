@@ -77,6 +77,32 @@ interface CognitiveModule {
 }
 
 /**
+ * Check that a dynamically imported module actually implements the
+ * CognitiveModule interface before adopting it. A resolvable package with a
+ * different API surface must not be used blindly.
+ */
+function isCognitiveModule(candidate: unknown): candidate is CognitiveModule {
+  if (candidate === null || typeof candidate !== 'object') return false;
+  const mod = candidate as Record<string, unknown>;
+  return (
+    typeof mod['store'] === 'function' &&
+    typeof mod['retrieve'] === 'function' &&
+    typeof mod['search'] === 'function' &&
+    typeof mod['decay'] === 'function' &&
+    typeof mod['consolidate'] === 'function' &&
+    typeof mod['focus'] === 'function' &&
+    typeof mod['broaden'] === 'function' &&
+    typeof mod['narrow'] === 'function' &&
+    typeof mod['getAttentionState'] === 'function' &&
+    typeof mod['assess'] === 'function' &&
+    typeof mod['monitor'] === 'function' &&
+    typeof mod['regulate'] === 'function' &&
+    typeof mod['scaffold'] === 'function' &&
+    typeof mod['adapt'] === 'function'
+  );
+}
+
+/**
  * Cognitive Bridge implementation
  */
 export class CognitiveBridge {
@@ -109,9 +135,10 @@ export class CognitiveBridge {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const wasmModule = await (import('@ruvector/cognitum-gate-kernel' as any) as Promise<unknown>).catch(() => null);
 
-      if (wasmModule) {
-        this._module = wasmModule as unknown as CognitiveModule;
+      if (isCognitiveModule(wasmModule)) {
+        this._module = wasmModule;
       } else {
+        // Package absent or non-conforming — fall back to the local mock.
         this._module = this.createMockModule();
       }
 
@@ -323,10 +350,12 @@ export class CognitiveBridge {
       },
 
       focus(ids: string[]): AttentionState {
+        // Only items actually present in working memory can be focused
+        const validIds = ids.filter(id => workingMemory.has(id));
         attentionState = {
-          focus: ids,
-          breadth: 1 / Math.max(1, ids.length),
-          intensity: Math.min(1, 0.5 + ids.length * 0.1),
+          focus: validIds,
+          breadth: 1 / Math.max(1, validIds.length),
+          intensity: Math.min(1, 0.5 + validIds.length * 0.1),
           distractors: [],
         };
         return attentionState;

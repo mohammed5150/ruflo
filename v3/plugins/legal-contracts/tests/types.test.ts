@@ -375,11 +375,22 @@ describe('Legal Contracts Types', () => {
       const input = {
         document: 'Contract',
         playbook: '{}',
-        prioritizeClauses: ['indemnification', 'liability'],
+        prioritizeClauses: ['indemnification', 'limitation_of_liability'],
       };
 
       const result = PlaybookMatchInputSchema.safeParse(input);
       expect(result.success).toBe(true);
+    });
+
+    it('should reject invalid priority clause types', () => {
+      const input = {
+        document: 'Contract',
+        playbook: '{}',
+        prioritizeClauses: ['indemnification', 'liability'], // 'liability' is not a ClauseType
+      };
+
+      const result = PlaybookMatchInputSchema.safeParse(input);
+      expect(result.success).toBe(false);
     });
 
     it('should reject playbook exceeding size limit', () => {

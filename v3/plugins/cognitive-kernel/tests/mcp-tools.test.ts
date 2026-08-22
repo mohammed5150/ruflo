@@ -61,10 +61,11 @@ describe('cognition/working-memory handler', () => {
   const tool = getTool('cognition/working-memory')!;
 
   it('should handle allocate action', async () => {
+    // Slot IDs are server-generated on allocate; the caller supplies only
+    // content/priority/decay.
     const input = {
       action: 'allocate',
       slot: {
-        id: 'slot-1',
         content: { data: 'important context' },
         priority: 0.9,
         decay: 0.05,
@@ -79,22 +80,49 @@ describe('cognition/working-memory handler', () => {
     expect(parsed.action).toBe('allocate');
     expect(parsed.success).toBe(true);
     expect(parsed.state).toHaveProperty('capacity');
+    expect(parsed.details.slotId).toBeDefined();
+  });
+
+  it('should reject allocate with a caller-supplied slot id', async () => {
+    const result = await tool.handler({
+      action: 'allocate',
+      slot: { id: 'slot-1', content: { data: 'x' } },
+      capacity: 7,
+    });
+
+    expect(result.isError).toBe(true);
   });
 
   it('should handle update action', async () => {
-    const input = {
+    // Allocate first to obtain a real slot id, then update it.
+    const allocResult = await tool.handler({
+      action: 'allocate',
+      slot: { content: { data: 'original content' } },
+      capacity: 7,
+    });
+    const slotId = JSON.parse(allocResult.content[0].text!).details.slotId;
+
+    const result = await tool.handler({
       action: 'update',
       slot: {
-        id: 'slot-1',
+        id: slotId,
         content: { data: 'updated content' },
       },
-    };
-
-    const result = await tool.handler(input);
+    });
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.action).toBe('update');
+    expect(parsed.success).toBe(true);
+  });
+
+  it('should return error when updating a non-existent slot', async () => {
+    const result = await tool.handler({
+      action: 'update',
+      slot: { id: 'no-such-slot', content: { data: 'x' } },
+    });
+
+    expect(result.isError).toBe(true);
   });
 
   it('should handle retrieve action', async () => {

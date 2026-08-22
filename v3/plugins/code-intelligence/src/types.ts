@@ -946,7 +946,10 @@ export class CodeIntelligenceError extends Error {
  * Secret patterns for masking
  */
 export const SECRET_PATTERNS = [
-  /(['"])(?:api[_-]?key|apikey|secret|password|token|auth)['"]\s*[:=]\s*['"][^'"]+['"]/gi,
+  // Matches both quoted keys ("api_key": "...") and bare identifier
+  // assignments (const apiKey = "...") — the bare form is the dominant
+  // shape in JS/TS source and was previously not masked at all.
+  /(['"]?)(?:api[_-]?key|apikey|secret|password|token|auth)\1\s*[:=]\s*['"][^'"]+['"]/gi,
   /(?:sk|pk)[-_](?:live|test)[-_][a-zA-Z0-9]{24,}/g,
   /ghp_[a-zA-Z0-9]{36}/g,
   /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/g,

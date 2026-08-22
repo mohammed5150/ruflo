@@ -29,6 +29,9 @@ const SCAN_DIRS = [
   'v3/__tests__/appliance',
   'v3/@claude-flow/embeddings/__tests__',
   'plugins',
+  // Content-filtered: only files importing node:test are picked up, so the
+  // vitest-based scripts/__tests__/ci-test-ratchet.test.mjs stays with vitest.
+  'scripts/__tests__',
 ];
 const TEST_FILE_RE = /\.test\.(ts|mjs|cjs)$/;
 const NODE_TEST_IMPORT_RE = /from\s+['"]node:test['"]|require\(\s*['"]node:test['"]\s*\)/;

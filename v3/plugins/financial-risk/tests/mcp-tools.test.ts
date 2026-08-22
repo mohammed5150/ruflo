@@ -1,10 +1,13 @@
 /**
  * Financial Risk Plugin - MCP Tools Tests
  *
- * Tests for MCP tool handlers with mock data
+ * Tests for MCP tool handlers with mock data.
+ *
+ * Contract under test (src/types.ts MCPToolResult):
+ *   success: boolean; data?: unknown; error?: string; metadata?: {...}
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   portfolioRiskTool,
   anomalyDetectTool,
@@ -15,6 +18,7 @@ import {
   getTool,
   getToolNames,
 } from '../src/mcp-tools.js';
+import { FinancialErrorCodes } from '../src/types.js';
 
 // Mock bridges
 vi.mock('../src/bridges/economy-bridge.js', () => ({
@@ -58,7 +62,8 @@ vi.mock('../src/bridges/sparse-bridge.js', () => ({
   })),
 }));
 
-// Mock context for testing
+// Mock context for testing. ADMIN has access to all five tools
+// (see FinancialRolePermissions in src/types.ts).
 const createMockContext = (overrides = {}) => ({
   logger: {
     debug: vi.fn(),
@@ -67,20 +72,34 @@ const createMockContext = (overrides = {}) => ({
     error: vi.fn(),
   },
   userId: 'test-user',
-  userRoles: ['analyst'],
+  userRoles: ['ADMIN'],
   auditLogger: {
     log: vi.fn().mockResolvedValue(undefined),
   },
   ...overrides,
 });
 
+// A valid transaction matching AnomalyDetectInputSchema (uuid id, ISO
+// timestamp, required parties array).
+const validTransaction = (overrides = {}) => ({
+  id: '550e8400-e29b-41d4-a716-446655440000',
+  timestamp: '2024-01-15T10:30:00Z',
+  amount: 1000,
+  parties: ['acct-a', 'acct-b'],
+  ...overrides,
+});
+
+// MarketRegimeInputSchema requires at least 10 prices.
+const validMarketData = () => ({
+  prices: [100, 101, 102, 103, 104, 105, 104, 106, 107, 108, 109, 110],
+  volumes: [1000, 1100, 1200, 900, 1000, 1100, 1050, 1150, 1250, 950, 1000, 1100],
+});
+
 describe('Financial Risk MCP Tools', () => {
   beforeEach(() => {
+    // clearAllMocks resets call history but keeps the bridge
+    // mockImplementations above intact (restoreAllMocks would strip them).
     vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('Tool Registry', () => {
@@ -146,8 +165,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.metrics).toBeDefined();
       expect(data.metrics.var).toBeDefined();
       expect(data.concentrationRisk).toBeDefined();
@@ -165,15 +184,16 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.concentrationRisk.topHoldings).toBeDefined();
       expect(data.concentrationRisk.sectorExposure).toBeDefined();
+      expect(data.concentrationRisk.topHoldings[0].symbol).toBe('AAPL');
     });
 
     it('should reject unauthorized access', async () => {
       const context = createMockContext({
-        userRoles: ['viewer'], // No access to portfolio-risk
+        userRoles: ['AUDITOR'], // AUDITOR has no access to portfolio-risk
       });
 
       const input = {
@@ -182,22 +202,25 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, context);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('UNAUTHORIZED');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('UNAUTHORIZED');
     });
 
-    it('should reject rate limit exceeded', async () => {
-      // Simulate rate limiting by making many requests
-      const context = createMockContext();
+    it('should reject requests over the rate limit', async () => {
+      // portfolio-risk allows 60 requests/minute per user (FinancialRateLimits)
+      const context = createMockContext({ userId: 'pr-rate-limit-user' });
       const input = {
         holdings: [{ symbol: 'AAPL', quantity: 100 }],
       };
 
-      // First request should succeed
-      const r1 = await portfolioRiskTool.handler(input, context);
-      expect(r1.isError).toBeUndefined();
+      for (let i = 0; i < 60; i++) {
+        const r = await portfolioRiskTool.handler(input, context);
+        expect(r.success).toBe(true);
+      }
 
-      // Rate limiting depends on FinancialRateLimits implementation
+      const limited = await portfolioRiskTool.handler(input, context);
+      expect(limited.success).toBe(false);
+      expect(limited.error).toBe(FinancialErrorCodes.RATE_LIMIT_EXCEEDED);
     });
 
     it('should reject empty holdings', async () => {
@@ -207,7 +230,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject invalid symbol format', async () => {
@@ -217,7 +241,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should log audit entries', async () => {
@@ -248,21 +273,14 @@ describe('Financial Risk MCP Tools', () => {
 
     it('should handle valid input', async () => {
       const input = {
-        transactions: [
-          {
-            id: '550e8400-e29b-41d4-a716-446655440000',
-            timestamp: '2024-01-15T10:30:00Z',
-            amount: 10000,
-            type: 'transfer',
-          },
-        ],
+        transactions: [validTransaction({ amount: 10000, type: 'transfer' })],
         sensitivity: 0.8,
       };
 
       const result = await anomalyDetectTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.anomalies).toBeDefined();
       expect(data.riskScore).toBeDefined();
       expect(data.patterns).toBeDefined();
@@ -273,59 +291,50 @@ describe('Financial Risk MCP Tools', () => {
 
       for (const ctx of contexts) {
         const input = {
-          transactions: [
-            {
-              id: '550e8400-e29b-41d4-a716-446655440000',
-              timestamp: '2024-01-15T10:30:00Z',
-              amount: 1000,
-            },
-          ],
+          transactions: [validTransaction()],
           context: ctx,
         };
 
         const result = await anomalyDetectTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
+        expect(result.success).toBe(true);
       }
     });
 
     it('should reject unauthorized access', async () => {
       const context = createMockContext({
-        userRoles: ['viewer'], // No access
+        userRoles: ['TRADER'], // TRADER has no access to anomaly-detect
       });
 
       const input = {
-        transactions: [
-          { id: '550e8400-e29b-41d4-a716-446655440000', timestamp: '2024-01-15T10:30:00Z', amount: 1000 },
-        ],
+        transactions: [validTransaction()],
       };
 
       const result = await anomalyDetectTool.handler(input, context);
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('UNAUTHORIZED');
     });
 
     it('should reject invalid transaction UUID', async () => {
       const input = {
-        transactions: [
-          { id: 'invalid-uuid', timestamp: '2024-01-15T10:30:00Z', amount: 1000 },
-        ],
+        transactions: [validTransaction({ id: 'invalid-uuid' })],
       };
 
       const result = await anomalyDetectTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject invalid timestamp', async () => {
       const input = {
-        transactions: [
-          { id: '550e8400-e29b-41d4-a716-446655440000', timestamp: 'invalid', amount: 1000 },
-        ],
+        transactions: [validTransaction({ timestamp: 'invalid' })],
       };
 
       const result = await anomalyDetectTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject empty transactions', async () => {
@@ -335,7 +344,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await anomalyDetectTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
   });
 
@@ -349,16 +359,13 @@ describe('Financial Risk MCP Tools', () => {
 
     it('should handle valid input', async () => {
       const input = {
-        marketData: {
-          prices: [100, 101, 102, 103, 104, 105],
-          volumes: [1000, 1100, 1200, 900, 1000, 1100],
-        },
+        marketData: validMarketData(),
       };
 
       const result = await marketRegimeTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.currentRegime).toBeDefined();
       expect(data.currentRegime.regime).toBeDefined();
       expect(data.currentRegime.confidence).toBeDefined();
@@ -368,31 +375,26 @@ describe('Financial Risk MCP Tools', () => {
 
     it('should include regime characteristics', async () => {
       const input = {
-        marketData: {
-          prices: [100, 101, 102, 103, 104, 105],
-          volumes: [1000, 1100, 1200, 900, 1000, 1100],
-        },
+        marketData: validMarketData(),
       };
 
       const result = await marketRegimeTool.handler(input, createMockContext());
 
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.currentRegime.characteristics).toBeDefined();
       expect(Array.isArray(data.currentRegime.characteristics)).toBe(true);
     });
 
     it('should handle lookback period', async () => {
       const input = {
-        marketData: {
-          prices: [100, 101, 102],
-          volumes: [1000, 1100, 1200],
-        },
+        marketData: validMarketData(),
         lookbackPeriod: 30,
       };
 
       const result = await marketRegimeTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
+      expect(result.success).toBe(true);
     });
 
     it('should reject missing market data', async () => {
@@ -402,20 +404,22 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await marketRegimeTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject insufficient price data', async () => {
       const input = {
         marketData: {
-          prices: [], // Too few
-          volumes: [],
+          prices: [100, 101], // schema requires at least 10 prices
+          volumes: [1000, 1100],
         },
       };
 
       const result = await marketRegimeTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
   });
 
@@ -431,13 +435,13 @@ describe('Financial Risk MCP Tools', () => {
       const input = {
         entity: 'ACME Bank',
         regulations: ['basel3', 'aml'],
-        scope: 'full',
+        scope: 'all',
       };
 
       const result = await complianceCheckTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.entity).toBe('ACME Bank');
       expect(data.compliant).toBeDefined();
       expect(data.violations).toBeDefined();
@@ -453,8 +457,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await complianceCheckTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.capitalAdequacy).toBeDefined();
       expect(data.capitalAdequacy.cet1Ratio).toBeDefined();
       expect(data.capitalAdequacy.tier1Ratio).toBeDefined();
@@ -470,7 +474,7 @@ describe('Financial Risk MCP Tools', () => {
         };
 
         const result = await complianceCheckTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
+        expect(result.success).toBe(true);
       }
     });
 
@@ -483,8 +487,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await complianceCheckTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.asOfDate).toBe('2024-01-15');
     });
 
@@ -495,7 +499,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await complianceCheckTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject empty regulations', async () => {
@@ -506,7 +511,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await complianceCheckTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
   });
 
@@ -538,8 +544,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.scenarios).toBeDefined();
       expect(data.aggregateImpact).toBeDefined();
       expect(data.capitalRecommendation).toBeDefined();
@@ -560,8 +566,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      expect(result.success).toBe(true);
+      const data = result.data as any;
       expect(data.scenarios).toHaveLength(3);
       expect(data.aggregateImpact.worstCase).toBeDefined();
     });
@@ -578,14 +584,15 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, createMockContext());
 
-      const data = JSON.parse(result.content[0].text!);
-      // VaR breach depends on shock magnitude
-      expect(data.scenarios[0].riskMetrics.varBreach).toBeDefined();
+      expect(result.success).toBe(true);
+      const data = result.data as any;
+      // A -25% equity shock exceeds the 10% VaR breach threshold
+      expect(data.scenarios[0].riskMetrics.varBreach).toBe(true);
     });
 
     it('should reject unauthorized access', async () => {
       const context = createMockContext({
-        userRoles: ['viewer'], // No access
+        userRoles: ['AUDITOR'], // AUDITOR has no access to stress-test
       });
 
       const input = {
@@ -595,7 +602,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, context);
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('UNAUTHORIZED');
     });
 
     it('should reject empty scenarios', async () => {
@@ -606,7 +614,8 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
 
     it('should reject empty portfolio holdings', async () => {
@@ -617,46 +626,51 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await stressTestTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid input');
     });
   });
 
   describe('Rate Limiting', () => {
-    it('should enforce rate limits on portfolio-risk', async () => {
-      const context = createMockContext();
-      const input = {
-        holdings: [{ symbol: 'AAPL', quantity: 100 }],
-      };
-
-      // Rate limiting is per minute, first request should pass
-      const r1 = await portfolioRiskTool.handler(input, context);
-      expect(r1.isError).toBeUndefined();
-
-      // Subsequent requests within limit should also pass
-      // Full rate limit testing would require time manipulation
-    });
-
-    it('should enforce rate limits on anomaly-detect', async () => {
-      const context = createMockContext();
-      const input = {
-        transactions: [
-          { id: '550e8400-e29b-41d4-a716-446655440000', timestamp: '2024-01-15T10:30:00Z', amount: 1000 },
-        ],
-      };
-
-      const r1 = await anomalyDetectTool.handler(input, context);
-      expect(r1.isError).toBeUndefined();
-    });
-
     it('should enforce rate limits on stress-test', async () => {
-      const context = createMockContext();
+      // stress-test allows 10 requests/minute per user (FinancialRateLimits)
+      const context = createMockContext({ userId: 'st-rate-limit-user' });
       const input = {
         portfolio: { holdings: [{ symbol: 'AAPL', quantity: 100 }] },
         scenarios: [{ name: 'Test', type: 'hypothetical', shocks: { equityShock: -0.1 } }],
       };
 
-      const r1 = await stressTestTool.handler(input, context);
-      expect(r1.isError).toBeUndefined();
+      for (let i = 0; i < 10; i++) {
+        const r = await stressTestTool.handler(input, context);
+        expect(r.success).toBe(true);
+      }
+
+      const limited = await stressTestTool.handler(input, context);
+      expect(limited.success).toBe(false);
+      expect(limited.error).toBe(FinancialErrorCodes.RATE_LIMIT_EXCEEDED);
+    });
+
+    it('should track rate limits per user', async () => {
+      const input = {
+        portfolio: { holdings: [{ symbol: 'AAPL', quantity: 100 }] },
+        scenarios: [{ name: 'Test', type: 'hypothetical', shocks: { equityShock: -0.1 } }],
+      };
+
+      // The previous test exhausted 'st-rate-limit-user'; a different
+      // user must still be allowed through.
+      const other = createMockContext({ userId: 'st-other-user' });
+      const r = await stressTestTool.handler(input, other);
+      expect(r.success).toBe(true);
+    });
+
+    it('should allow anomaly-detect requests within the limit', async () => {
+      const context = createMockContext({ userId: 'ad-rate-limit-user' });
+      const input = {
+        transactions: [validTransaction()],
+      };
+
+      const r1 = await anomalyDetectTool.handler(input, context);
+      expect(r1.success).toBe(true);
     });
   });
 
@@ -693,7 +707,7 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBeUndefined();
+      expect(result.success).toBe(true);
     });
 
     it('should include error details in response', async () => {
@@ -703,10 +717,9 @@ describe('Financial Risk MCP Tools', () => {
 
       const result = await portfolioRiskTool.handler(input, createMockContext());
 
-      expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.error).toBe(true);
-      expect(data.message).toBeDefined();
+      expect(result.success).toBe(false);
+      expect(typeof result.error).toBe('string');
+      expect(result.error).toContain('Invalid input');
     });
   });
 });

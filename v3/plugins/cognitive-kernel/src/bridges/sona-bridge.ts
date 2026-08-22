@@ -116,6 +116,29 @@ interface SonaModule {
 }
 
 /**
+ * Check that a dynamically imported module actually implements the
+ * SonaModule interface before adopting it. A resolvable `@ruvector/sona`
+ * package with a different API surface must not be used blindly.
+ */
+function isSonaModule(candidate: unknown): candidate is SonaModule {
+  if (candidate === null || typeof candidate !== 'object') return false;
+  const mod = candidate as Record<string, unknown>;
+  return (
+    typeof mod['learn'] === 'function' &&
+    typeof mod['predict'] === 'function' &&
+    typeof mod['storePattern'] === 'function' &&
+    typeof mod['findPatterns'] === 'function' &&
+    typeof mod['updatePatternSuccess'] === 'function' &&
+    typeof mod['applyLoRA'] === 'function' &&
+    typeof mod['updateLoRA'] === 'function' &&
+    typeof mod['computeFisher'] === 'function' &&
+    typeof mod['consolidate'] === 'function' &&
+    typeof mod['setMode'] === 'function' &&
+    typeof mod['getMode'] === 'function'
+  );
+}
+
+/**
  * SONA Bridge implementation
  */
 export class SonaBridge {
@@ -148,9 +171,12 @@ export class SonaBridge {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const wasmModule = await (import('@ruvector/sona' as any) as Promise<unknown>).catch(() => null);
 
-      if (wasmModule) {
-        this._module = wasmModule as unknown as SonaModule;
+      if (isSonaModule(wasmModule)) {
+        this._module = wasmModule;
       } else {
+        // Package absent, or its exports do not conform to the flat
+        // SonaModule interface (e.g. @ruvector/sona exposes a SonaEngine
+        // class instead) — fall back to the local mock implementation.
         this._module = this.createMockModule();
       }
 

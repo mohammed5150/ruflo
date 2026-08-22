@@ -101,7 +101,10 @@ describe('CognitiveBridge', () => {
 
       expect(retrieved).not.toBeNull();
       expect(retrieved?.id).toBe('item-1');
-      expect(retrieved?.salience).toBe(0.8);
+      // Retrieval boosts salience (rehearsal effect), so it must be at
+      // least the stored value — never decayed by a read.
+      expect(retrieved?.salience).toBeGreaterThanOrEqual(0.8);
+      expect(retrieved?.salience).toBeLessThanOrEqual(1);
     });
 
     it('should return null for non-existent item', () => {
@@ -177,9 +180,14 @@ describe('CognitiveBridge', () => {
       };
 
       bridge.store(item);
-      bridge.decay(1000);  // 1 second
+      // deltaTime is in seconds (decayRate is per-second). 20s decays
+      // salience 0.8 -> 0.64; the +0.1 retrieval boost still leaves it
+      // clearly below the stored 0.8, without crossing the 0.1 eviction
+      // threshold.
+      bridge.decay(20);
 
       const retrieved = bridge.retrieve('item-1');
+      expect(retrieved).not.toBeNull();
       expect(retrieved?.salience).toBeLessThan(0.8);
     });
 

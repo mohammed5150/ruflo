@@ -5,6 +5,11 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // discovery to tests that can actually run under the root harness.
 export default defineConfig({
   test: {
+    // Match v3/vitest.config.ts (and the hooks package's own config): several
+    // suites cold-load ReasoningBank patterns / ONNX embeddings and legitimately
+    // exceed vitest's 5s default when the root runner picks them up.
+    testTimeout: 30000,
+    hookTimeout: 30000,
     exclude: [
       ...configDefaults.exclude,
       // ruflo/src/ruvocal is a vendored SvelteKit app with its own npm
@@ -24,6 +29,10 @@ export default defineConfig({
       'v3/@claude-flow/embeddings/__tests__/*.test.mjs',
       'plugins/**/*.test.mjs',
       'plugins/**/*.test.cjs',
+      // These two are node:test files; scripts/__tests__/ci-test-ratchet.test.mjs
+      // is vitest-based and deliberately NOT excluded.
+      'scripts/__tests__/audit-supply-chain.test.mjs',
+      'scripts/__tests__/stage-internal-runtime-bundles.test.mjs',
     ],
   },
 });

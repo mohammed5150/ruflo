@@ -80,7 +80,11 @@ describe('quantum_annealing_solve handler', () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed).toHaveProperty('solution');
-    expect(parsed).toHaveProperty('details');
+    expect(parsed.solution).toHaveProperty('assignment');
+    expect(parsed.solution).toHaveProperty('energy');
+    expect(parsed).toHaveProperty('samples');
+    expect(parsed).toHaveProperty('timing');
+    expect(parsed).toHaveProperty('energyHistogram');
   });
 
   it('should handle all problem types', async () => {
@@ -156,7 +160,12 @@ describe('quantum_qaoa_optimize handler', () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed).toHaveProperty('solution');
-    expect(parsed).toHaveProperty('details');
+    expect(parsed.solution).toHaveProperty('assignment');
+    expect(parsed).toHaveProperty('parameters');
+    expect(parsed.parameters).toHaveProperty('gamma');
+    expect(parsed.parameters).toHaveProperty('beta');
+    expect(parsed).toHaveProperty('approximationRatio');
+    expect(parsed).toHaveProperty('convergence');
   });
 
   it('should handle all problem types', async () => {
@@ -210,9 +219,9 @@ describe('quantum_qaoa_optimize handler', () => {
     const result = await tool.handler(input);
     const parsed = JSON.parse(result.content[0].text!);
 
-    expect(parsed.details).toHaveProperty('approximationRatio');
-    expect(parsed.details.approximationRatio).toBeGreaterThan(0);
-    expect(parsed.details.approximationRatio).toBeLessThanOrEqual(1);
+    expect(parsed).toHaveProperty('approximationRatio');
+    expect(parsed.approximationRatio).toBeGreaterThan(0);
+    expect(parsed.approximationRatio).toBeLessThanOrEqual(1);
   });
 });
 
@@ -235,7 +244,10 @@ describe('quantum_grover_search handler', () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed).toHaveProperty('solutions');
-    expect(parsed).toHaveProperty('details');
+    expect(parsed).toHaveProperty('queries');
+    expect(parsed).toHaveProperty('optimalQueries');
+    expect(parsed).toHaveProperty('successProbability');
+    expect(parsed).toHaveProperty('speedup');
   });
 
   it('should handle all structure types', async () => {
@@ -285,10 +297,10 @@ describe('quantum_grover_search handler', () => {
     const result = await tool.handler(input);
     const parsed = JSON.parse(result.content[0].text!);
 
-    expect(parsed.details).toHaveProperty('queries');
-    expect(parsed.details.queries).toBeGreaterThan(0);
+    expect(parsed).toHaveProperty('queries');
+    expect(parsed.queries).toBeGreaterThan(0);
     // Grover provides quadratic speedup
-    expect(parsed.details.queries).toBeLessThan(10000);
+    expect(parsed.queries).toBeLessThan(10000);
   });
 });
 
@@ -315,7 +327,10 @@ describe('quantum_dependency_resolve handler', () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed).toHaveProperty('resolved');
-    expect(parsed).toHaveProperty('details');
+    expect(parsed).toHaveProperty('installOrder');
+    expect(parsed).toHaveProperty('resolvedConflicts');
+    expect(parsed).toHaveProperty('totalSize');
+    expect(parsed).toHaveProperty('vulnerabilities');
   });
 
   it('should handle all minimize objectives', async () => {
@@ -358,8 +373,9 @@ describe('quantum_dependency_resolve handler', () => {
     const result = await tool.handler(input);
     const parsed = JSON.parse(result.content[0].text!);
 
-    expect(parsed.details).toHaveProperty('installationOrder');
-    expect(Array.isArray(parsed.details.installationOrder)).toBe(true);
+    expect(parsed).toHaveProperty('installOrder');
+    expect(Array.isArray(parsed.installOrder)).toBe(true);
+    expect(parsed.installOrder.length).toBeGreaterThan(0);
   });
 
   it('should return error for empty packages', async () => {
@@ -395,7 +411,11 @@ describe('quantum_schedule_optimize handler', () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed).toHaveProperty('schedule');
-    expect(parsed).toHaveProperty('details');
+    expect(parsed).toHaveProperty('makespan');
+    expect(parsed).toHaveProperty('cost');
+    expect(parsed).toHaveProperty('utilization');
+    expect(parsed).toHaveProperty('criticalPath');
+    expect(parsed).toHaveProperty('score');
   });
 
   it('should handle all objectives', async () => {
@@ -426,9 +446,10 @@ describe('quantum_schedule_optimize handler', () => {
     const result = await tool.handler(input);
     const parsed = JSON.parse(result.content[0].text!);
 
-    expect(parsed.details).toHaveProperty('makespan');
-    expect(parsed.details).toHaveProperty('cost');
-    expect(parsed.details).toHaveProperty('utilization');
+    expect(parsed).toHaveProperty('makespan');
+    expect(parsed).toHaveProperty('cost');
+    expect(parsed).toHaveProperty('utilization');
+    expect(parsed.makespan).toBeGreaterThan(0);
   });
 
   it('should identify critical path', async () => {
@@ -444,8 +465,8 @@ describe('quantum_schedule_optimize handler', () => {
     const result = await tool.handler(input);
     const parsed = JSON.parse(result.content[0].text!);
 
-    expect(parsed.details).toHaveProperty('criticalPath');
-    expect(Array.isArray(parsed.details.criticalPath)).toBe(true);
+    expect(parsed).toHaveProperty('criticalPath');
+    expect(Array.isArray(parsed.criticalPath)).toBe(true);
   });
 
   it('should return error for empty tasks', async () => {

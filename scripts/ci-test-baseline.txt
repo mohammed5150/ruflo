@@ -10,8 +10,19 @@
 #   baseline), and 11 entries verified green in BOTH the installed local
 #   env AND a CI-shaped env (v3 node_modules hidden); restored 2 entries
 #   from the 1st pass that fail in the CI-shaped env.
-scripts/__tests__/audit-supply-chain.test.mjs
-scripts/__tests__/stage-internal-runtime-bundles.test.mjs
+# 2026-08-22 (3rd pass): scripts/__tests__ audit-supply-chain and
+#   stage-internal-runtime-bundles converted from self-executing assert
+#   scripts to node:test (they always passed when run as documented; vitest
+#   counted them failed as "no test suite") — now gated by run-node-tests.
+# 2026-08-22 (4th pass): 9 domain-plugin files genuinely fixed (interface
+#   drift + real impl bugs: absent RBAC/audit in legal-contracts, secret-mask
+#   gap in code-intelligence, blind WASM casts in cognitive-kernel); swarm
+#   consensus/topology fixed (missing votes; sleep past the test timeout);
+#   hooks reasoningbank/guidance-provider fixed by matching the root vitest
+#   timeout to v3's 30s. All prunes re-validated in the CI-shaped env.
+#   The 19 remaining entries mostly REQUIRE v3 workspace deps that ci.yml's
+#   root-only `npm ci` never installs — fixing those means installing v3
+#   deps in the root CI job (or moving the suites to v3-ci), not test edits.
 v3/@claude-flow/cli/__tests__/agenticow-tools.test.ts
 v3/@claude-flow/cli/__tests__/agntcy/agntcy-commands.test.ts
 v3/@claude-flow/cli/__tests__/mcp-http-foreground-2984.test.ts
@@ -28,19 +39,6 @@ v3/@claude-flow/cli/__tests__/validate-input-path-2352.test.ts
 v3/@claude-flow/cli/__tests__/version-anv.test.ts
 v3/@claude-flow/guidance/tests/hooks.test.ts
 v3/@claude-flow/guidance/tests/integration.test.ts
-v3/@claude-flow/hooks/src/__tests__/guidance-provider.test.ts
-v3/@claude-flow/hooks/src/__tests__/reasoningbank.test.ts
 v3/@claude-flow/plugin-iot-cognitum/__tests__/integration/sdk-client.test.ts
 v3/@claude-flow/plugins/examples/ruvector-plugins/ruvector-plugins.test.ts
-v3/@claude-flow/swarm/__tests__/consensus.test.ts
-v3/@claude-flow/swarm/__tests__/topology.test.ts
 v3/__tests__/integration/swarm-integration.test.ts
-v3/plugins/code-intelligence/tests/mcp-tools.test.ts
-v3/plugins/code-intelligence/tests/types.test.ts
-v3/plugins/cognitive-kernel/tests/bridges.test.ts
-v3/plugins/cognitive-kernel/tests/mcp-tools.test.ts
-v3/plugins/financial-risk/tests/mcp-tools.test.ts
-v3/plugins/healthcare-clinical/tests/types.test.ts
-v3/plugins/legal-contracts/tests/mcp-tools.test.ts
-v3/plugins/legal-contracts/tests/types.test.ts
-v3/plugins/quantum-optimizer/tests/mcp-tools.test.ts
