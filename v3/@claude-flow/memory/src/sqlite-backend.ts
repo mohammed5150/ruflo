@@ -80,7 +80,7 @@ const DEFAULT_CONFIG: SQLiteBackendConfig = {
  */
 export class SQLiteBackend extends EventEmitter implements IMemoryBackend {
   private config: SQLiteBackendConfig;
-  private db: Database.Database | null = null;
+  private db: InstanceType<DatabaseCtor> | null = null;
   private initialized: boolean = false;
 
   /** Whether the FTS5 virtual table is available on this build. */

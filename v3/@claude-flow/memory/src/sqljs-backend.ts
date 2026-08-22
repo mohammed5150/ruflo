@@ -9,7 +9,10 @@
 
 import { EventEmitter } from 'node:events';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import initSqlJs from 'sql.js';
+// sql.js types are `export =`; deriving Database from the default import's
+// return type resolves under both node16 and bundler moduleResolution.
+type SqlJsDatabase = InstanceType<Awaited<ReturnType<typeof initSqlJs>>['Database']>;
 import { safeJsonParse } from './json-security.js';
 import {
   IMemoryBackend,

@@ -46,8 +46,8 @@ export {
   isSuccess,
   isError,
 
-  // Namespace
-  RuVector,
+  // Namespace (type-only under isolatedModules)
+  type RuVector,
 
   // Attention Mechanisms
   AttentionRegistry,

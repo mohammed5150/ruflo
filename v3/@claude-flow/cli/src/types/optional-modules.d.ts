@@ -23,15 +23,23 @@ declare module 'sql.js' {
 // structural check and the strengthened `--component memory` integrity
 // check both prefer this over sql.js when it's installed, falling back to
 // sql.js (main-image-only / WAL-blind) when it's not.
+//
+// CAUTION: an ambient `declare module` SHADOWS the real @types package for
+// every file in the same program (e.g. a whole-tree tsc run that also
+// contains @claude-flow/memory, whose SQLiteBackend uses the full API).
+// The index signatures keep this stub permissive — a too-narrow stub here
+// breaks other packages' correctly-typed code. Do not remove them.
 declare module 'better-sqlite3' {
   interface DatabaseOptions {
     readonly?: boolean;
     fileMustExist?: boolean;
     timeout?: number;
     verbose?: (message?: unknown, ...additionalArgs: unknown[]) => void;
+    [key: string]: unknown;
   }
   class Database {
-    constructor(filename: string, options?: DatabaseOptions);
+    [key: string]: any;
+    constructor(filename?: string | Buffer, options?: DatabaseOptions);
     pragma(source: string, options?: { simple?: boolean }): any;
     close(): void;
     readonly open: boolean;
