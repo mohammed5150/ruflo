@@ -17,7 +17,7 @@
  * @module v3/security/safe-executor
  */
 
-import { execFile, spawn, ChildProcess } from 'child_process';
+import { execFile, execFileSync, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 
@@ -366,6 +366,79 @@ export class SafeExecutor {
         stdout: error.stdout?.toString() ?? '',
         stderr: error.stderr?.toString() ?? error.message,
         exitCode: error.code ?? 1,
+        command,
+        args,
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Synchronous variant of execute() for call sites that cannot be async
+   * (CLI startup paths, sync resolver hooks). Identical allowlist and
+   * argument validation; identical no-shell guarantee. Prefer execute()
+   * anywhere an event loop is running.
+   *
+   * @param command - Command to execute (must be in allowlist)
+   * @param args - Command arguments
+   * @returns Execution result
+   * @throws SafeExecutorError on validation failure, timeout, or missing command
+   */
+  executeSync(command: string, args: string[] = []): ExecutionResult {
+    const startTime = Date.now();
+
+    // Validate command
+    this.validateCommand(command);
+
+    // Validate arguments
+    this.validateArguments(args);
+
+    try {
+      // Execute command WITHOUT shell
+      const stdout = execFileSync(command, args, {
+        cwd: this.config.cwd,
+        env: this.config.env,
+        timeout: this.config.timeout,
+        maxBuffer: this.config.maxBuffer,
+        shell: false, // CRITICAL: Never use shell
+        windowsHide: true,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      return {
+        stdout: stdout.toString(),
+        stderr: '',
+        exitCode: 0,
+        command,
+        args,
+        duration: Date.now() - startTime,
+      };
+    } catch (error: any) {
+      if (error.killed) {
+        throw new SafeExecutorError(
+          'Command execution timed out',
+          'TIMEOUT',
+          command,
+          args
+        );
+      }
+
+      if (error.code === 'ENOENT') {
+        throw new SafeExecutorError(
+          `Command not found: ${command}`,
+          'COMMAND_NOT_FOUND',
+          command,
+          args
+        );
+      }
+
+      // execFileSync reports the exit code as `status` (unlike execFile's
+      // callback, where `code` carries it).
+      return {
+        stdout: error.stdout?.toString() ?? '',
+        stderr: error.stderr?.toString() ?? error.message,
+        exitCode: typeof error.status === 'number' ? error.status : 1,
         command,
         args,
         duration: Date.now() - startTime,
