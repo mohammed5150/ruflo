@@ -1,3 +1,17 @@
 # Known-failing node:test files (run by scripts/run-node-tests.mjs).
 # Same rules as ci-test-baseline.txt: entries may only be REMOVED (when
 # fixed); never add entries to make a regression green.
+#
+# hook-handler-runwithtimeout (original baseline entry, restored): the fix
+# is known and small — add `module.exports = { runWithTimeout,
+# INTELLIGENCE_TIMEOUT_MS }` and wrap the main() invocation in
+# `if (require.main === module)` in BOTH .claude/helpers/hook-handler.cjs
+# copies (see this branch's history at commit 8d5b4dc for the exact patch;
+# reverted in 1ec37a1/后续). It CANNOT land from a normal PR: the shipped
+# copy's sha256 is pinned in the Ed25519-signed helpers.manifest.json
+# (helper-signing.test.ts) and hook-handler-artifact-parity.test.ts requires
+# both copies identical — so applying it requires a maintainer to re-run
+# scripts/sign-helpers.mjs with the ruflo-helpers-signing-key in the same
+# commit. Until then this suite cannot load the module (requiring it
+# executes main() and process.exit(0)s the runner).
+tests/hook-handler-runwithtimeout.test.cjs
