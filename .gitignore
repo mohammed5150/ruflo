@@ -193,3 +193,4 @@ node-compile-cache/
 .test-results/
 test-database-provider.rvf
 tests/.tmp-ctx-test/
+agentdb.rvf.idmap.json

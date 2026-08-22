@@ -7,7 +7,11 @@
 
 import type { Command, CommandContext, CommandResult } from '../types.js';
 import { output } from '../output.js';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+
+// #2770: npm ships as npm.cmd on Windows — spawn through the shell only there.
+// Every argv passed below is hard-coded, so this never re-opens injection.
+const WIN_SHELL = { shell: process.platform === 'win32', windowsHide: true } as const;
 import { existsSync, statSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { createBuiltinAIDefence, type DefenceEngine } from '../security/builtin-aidefence.js';
@@ -141,7 +145,7 @@ const scanCommand: Command = {
     try {
       const fs = await import('fs');
       const path = await import('path');
-      const { execSync } = await import('child_process');
+      const { execFileSync } = await import('child_process');
 
       // Phase 1: npm audit for dependency vulnerabilities
       if (scanType === 'all' || scanType === 'deps') {
@@ -151,11 +155,12 @@ const scanCommand: Command = {
           if (fs.existsSync(packageJsonPath)) {
             let auditResult: string;
             try {
-              auditResult = execSync('npm audit --json', {
+              auditResult = execFileSync('npm', ['audit', '--json'], {
                 cwd: path.resolve(target),
                 encoding: 'utf-8',
                 maxBuffer: 10 * 1024 * 1024,
                 stdio: ['pipe', 'pipe', 'pipe'],
+                ...WIN_SHELL,
               });
             } catch (auditErr: unknown) {
               // npm audit exits non-zero when vulnerabilities found — stdout still has JSON
@@ -364,7 +369,7 @@ const scanCommand: Command = {
         fixSpinner.start();
         try {
           try {
-            execSync('npm audit fix', { cwd: path.resolve(target), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+            execFileSync('npm', ['audit', 'fix'], { cwd: path.resolve(target), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...WIN_SHELL });
           } catch { /* npm audit fix may exit non-zero */ }
           fixSpinner.succeed('Applied available fixes (run scan again to verify)');
         } catch {
@@ -406,10 +411,11 @@ const cveCommand: Command = {
     // If --check CVE-XXXX is given, filter to that specific CVE ID.
     let auditJson: string;
     try {
-      auditJson = execSync('npm audit --json 2>/dev/null', {
+      auditJson = execFileSync('npm', ['audit', '--json'], {
         encoding: 'utf-8',
         timeout: 30000,
         stdio: ['pipe', 'pipe', 'pipe'],
+        ...WIN_SHELL,
       });
     } catch (e: unknown) {
       // npm audit exits non-zero when vulnerabilities found — stdout still has JSON
@@ -552,7 +558,7 @@ const threatsCommand: Command = {
     // Check for .env files committed to git
     const checkEnvInGit = () => {
       try {
-        const tracked = execSync('git ls-files --cached', { cwd: rootDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+        const tracked = execFileSync('git', ['ls-files', '--cached'], { cwd: rootDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
         const envFiles = tracked.split('\n').filter((f: string) => /(?:^|\/)\.env(?:\.|$)/.test(f));
         for (const envFile of envFiles) {
           findings.push({

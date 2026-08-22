@@ -145,10 +145,12 @@ export async function resolveGoogleAIApiKey(): Promise<string> {
 
   // 2. GCP Secrets Manager (matches resolveApiKey pattern in gaia-bench.ts)
   try {
-    const { execSync } = await import('node:child_process');
-    const key = execSync(
-      'gcloud secrets versions access latest --secret=GOOGLE_AI_API_KEY --project=ruv-dev 2>/dev/null',
-      { encoding: 'utf-8', timeout: 5_000 },
+    const { execFileSync } = await import('node:child_process');
+    const key = execFileSync(
+      process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud',
+      ['secrets', 'versions', 'access', 'latest', '--secret=GOOGLE_AI_API_KEY', '--project=ruv-dev'],
+      // shell only on Windows (.cmd shim); argv is fully static — no injection surface.
+      { encoding: 'utf-8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' },
     ).trim();
     if (key) return key;
   } catch {

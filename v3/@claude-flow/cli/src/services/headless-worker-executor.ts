@@ -19,7 +19,7 @@
  * - Event emission for monitoring
  */
 
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
@@ -713,10 +713,12 @@ export class HeadlessWorkerExecutor extends EventEmitter {
 
     const timeoutMs = Number.parseInt(process.env.CLAUDE_CODE_AVAILABILITY_TIMEOUT_MS || '', 10) || 5000;
     try {
-      const output = execSync('claude --version', {
+      // #2770: claude ships as claude.cmd on Windows; shell only there. Argv static.
+      const output = execFileSync('claude', ['--version'], {
         encoding: 'utf-8',
         stdio: 'pipe',
         timeout: timeoutMs,
+        shell: process.platform === 'win32',
         windowsHide: true, // Prevent phantom console windows on Windows
       });
       this.claudeCodeAvailable = true;

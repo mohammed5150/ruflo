@@ -4335,7 +4335,7 @@ const statuslineCommand: Command = {
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const fs = await import('fs');
     const path = await import('path');
-    const { execSync } = await import('child_process');
+    const { execFileSync } = await import('child_process');
 
     // Get learning stats from memory database
     function getLearningStats() {
@@ -4511,21 +4511,28 @@ const statuslineCommand: Command = {
       const isWindows = process.platform === 'win32';
 
       try {
-        const rootCmd = isWindows
-          ? 'git rev-parse --show-toplevel 2>NUL'
-          : 'git rev-parse --show-toplevel 2>/dev/null';
-        const branchCmd = isWindows
-          ? 'git branch --show-current 2>NUL || echo.'
-          : 'git branch --show-current 2>/dev/null || echo ""';
-        const root = execSync(rootCmd, { encoding: 'utf-8' }).trim();
+        // No shell: git is a real executable on every platform; the old
+        // `|| echo` shell fallbacks become per-call try/catch.
+        const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
         name = path.basename(root) || name;
         if (identityMode === 'author') {
-          const authorCmd = isWindows
-            ? 'git config user.name 2>NUL || echo user'
-            : 'git config user.name 2>/dev/null || echo "user"';
-          name = execSync(authorCmd, { encoding: 'utf-8' }).trim() || 'user';
+          try {
+            name = execFileSync('git', ['config', 'user.name'], {
+              encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim() || 'user';
+          } catch {
+            name = 'user';
+          }
         }
-        gitBranch = execSync(branchCmd, { encoding: 'utf-8' }).trim();
+        try {
+          gitBranch = execFileSync('git', ['branch', '--show-current'], {
+            encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+          }).trim();
+        } catch {
+          gitBranch = '';
+        }
         if (gitBranch === '.') gitBranch = '';
       } catch {
         // Ignore

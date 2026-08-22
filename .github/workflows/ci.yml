@@ -78,6 +78,11 @@ jobs:
         # shrink; replacing an old failure with a new one still fails.
         run: node scripts/ci-test-ratchet.mjs
 
+      - name: Run node:test suites (excluded from vitest — see vitest.config.ts)
+        # Ratcheted like the vitest suite: scripts/node-test-baseline.txt may
+        # only shrink; any NEW failing node:test file blocks the build.
+        run: node scripts/run-node-tests.mjs
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

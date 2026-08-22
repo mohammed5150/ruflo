@@ -1,0 +1,6 @@
+# Known-failing node:test files (run by scripts/run-node-tests.mjs).
+# Same rules as ci-test-baseline.txt: entries may only be REMOVED (when
+# fixed); never add entries to make a regression green.
+plugins/ruflo-workflows/scripts/gaia-audit.test.mjs
+tests/context-persistence-hook.test.mjs
+tests/hook-handler-runwithtimeout.test.cjs
