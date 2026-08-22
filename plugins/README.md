@@ -1,6 +1,6 @@
 # Ruflo Plugins
 
-32 Claude Code plugins for agent-powered development workflows. Load with `--plugin-dir`.
+39 Claude Code plugins for agent-powered development workflows. Load with `--plugin-dir`. Registry of truth: [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json).
 
 ## Quick Start
 
@@ -23,17 +23,20 @@ claude $(ls -d plugins/ruflo-*/ | sed 's|^|--plugin-dir |' | tr '\n' ' ')
 | [ruflo-autopilot](ruflo-autopilot/) | Autonomous /loop task completion with prediction |
 | [ruflo-loop-workers](ruflo-loop-workers/) | 12 background workers via /loop or CronCreate |
 | [ruflo-workflows](ruflo-workflows/) | Workflow templates, parallel execution, branching |
+| [ruflo-arena](ruflo-arena/) | Competitive ruliology — arenas, tournaments, co-evolution of strategies (ADR-147/148) |
+| [ruflo-agntcy](ruflo-agntcy/) | AGNTCY/Outshift runtime — SLIM transport, CASA authorization (ADR-380) |
 
 ### Memory & Intelligence
 
 | Plugin | Description |
 |--------|-------------|
-| [ruflo-agentdb](ruflo-agentdb/) | AgentDB with HNSW vector search (150x-12,500x faster) |
+| [ruflo-agentdb](ruflo-agentdb/) | AgentDB with HNSW vector search |
 | [ruflo-rag-memory](ruflo-rag-memory/) | SOTA RAG — hybrid search, Graph RAG, MMR diversity, memory bridge |
 | [ruflo-rvf](ruflo-rvf/) | Portable RVF memory format, session persistence |
 | [ruflo-ruvector](ruflo-ruvector/) | [`ruvector`](https://npmjs.com/package/ruvector) — FlashAttention-3, Graph RAG, hybrid search, 103 MCP tools, Brain AGI |
 | [ruflo-knowledge-graph](ruflo-knowledge-graph/) | Entity extraction, relation mapping, pathfinder traversal |
 | [ruflo-intelligence](ruflo-intelligence/) | SONA neural patterns, trajectory learning, model routing |
+| [ruflo-graph-intelligence](ruflo-graph-intelligence/) | Real-time relationship intelligence — personalized PageRank, complexity-aware execution |
 | [ruflo-daa](ruflo-daa/) | Dynamic Agentic Architecture, cognitive patterns |
 
 ### Architecture & Methodology
@@ -43,6 +46,7 @@ claude $(ls -d plugins/ruflo-*/ | sed 's|^|--plugin-dir |' | tr '\n' ' ')
 | [ruflo-adr](ruflo-adr/) | ADR lifecycle — create, index, supersede, compliance checking |
 | [ruflo-ddd](ruflo-ddd/) | DDD scaffolding — bounded contexts, aggregates, domain events |
 | [ruflo-sparc](ruflo-sparc/) | SPARC methodology with 5 phases and quality gates |
+| [ruflo-metaharness](ruflo-metaharness/) | MetaHarness scoring, genome, mcp-scan, threat-model (ADR-150) |
 
 ### Quality & Security
 
@@ -60,6 +64,7 @@ claude $(ls -d plugins/ruflo-*/ | sed 's|^|--plugin-dir |' | tr '\n' ' ')
 | [ruflo-jujutsu](ruflo-jujutsu/) | Diff analysis, risk scoring, reviewer recommendations |
 | [ruflo-docs](ruflo-docs/) | Doc generation, drift detection, API docs |
 | [ruflo-ruvllm](ruflo-ruvllm/) | Local LLM inference, MicroLoRA, chat formatting |
+| [ruflo-deepseek-harness](ruflo-deepseek-harness/) | DeepSeek chat + reasoner (R1) completions with CoT surfaced separately |
 | [ruflo-agent](ruflo-agent/) | WASM agent sandboxing and gallery |
 | [ruflo-plugin-creator](ruflo-plugin-creator/) | Scaffold and validate new plugins |
 | [ruflo-migrations](ruflo-migrations/) | Database schema migration management |
@@ -72,6 +77,8 @@ claude $(ls -d plugins/ruflo-*/ | sed 's|^|--plugin-dir |' | tr '\n' ' ')
 |--------|-------------|
 | [ruflo-goals](ruflo-goals/) | GOAP planning, deep research, horizon tracking |
 | [ruflo-federation](ruflo-federation/) | Zero-trust cross-installation agent federation |
+| [ruflo-bbs-federation](ruflo-bbs-federation/) | AgentBBS federated business-domain rooms (ADR-164 Phase 1) |
+| [ruflo-business-pods](ruflo-business-pods/) | Business-domain pod templates for the federated autopilot (ADR-164 Phase 2) |
 | [ruflo-iot-cognitum](ruflo-iot-cognitum/) | Cognitum Seed IoT — trust scoring, anomaly detection, fleet management |
 | [ruflo-neural-trader](ruflo-neural-trader/) | [`neural-trader`](https://npmjs.com/package/neural-trader) — 4 agents, LSTM/Transformer, Rust/NAPI backtesting, 112+ MCP tools |
 | [ruflo-market-data](ruflo-market-data/) | Market data ingestion, OHLCV vectorization, pattern matching |
@@ -87,7 +94,7 @@ claude $(ls -d plugins/ruflo-*/ | sed 's|^|--plugin-dir |' | tr '\n' ' ')
 | Vector search | `ruflo-core` + `ruflo-ruvector` + `ruflo-rag-memory` + `ruflo-knowledge-graph` |
 | IoT development | `ruflo-core` + `ruflo-iot-cognitum` + `ruflo-agentdb` |
 | Trading systems | `ruflo-core` + `ruflo-neural-trader` + `ruflo-market-data` + `ruflo-ruvector` |
-| Full stack | All 32 plugins |
+| Full stack | All 39 plugins |
 
 ## npm Package Integration
 
@@ -137,7 +144,7 @@ claude plugin validate plugins/ruflo-<name>
 
 ## Verification & Discoverability
 
-Every MCP tool description across the 32 plugins must answer "use this over native (Bash/Read/Grep/Glob/Task/TodoWrite) when?" per [ADR-112](../v3/docs/adr/ADR-112-mcp-tool-discoverability.md). The rule is enforced by CI:
+Every MCP tool description across the 39 plugins must answer "use this over native (Bash/Read/Grep/Glob/Task/TodoWrite) when?" per [ADR-112](../v3/docs/adr/ADR-112-mcp-tool-discoverability.md). The rule is enforced by CI:
 
 ```bash
 # Run the audit (scans all MCPTool definitions across all plugins)

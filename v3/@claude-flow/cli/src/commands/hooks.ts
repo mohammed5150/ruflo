@@ -5701,6 +5701,8 @@ export const hooksCommand: Command = {
       `${output.highlight('metrics')}         - View learning metrics dashboard`,
       `${output.highlight('transfer')}        - Transfer patterns from another project`,
       `${output.highlight('list')}            - List all registered hooks`,
+      `${output.highlight('intelligence')}    - RuVector intelligence (SONA/MoE/HNSW)`,
+      `${output.highlight('notify')}          - Send a notification message`,
       `${output.highlight('worker')}          - Background worker management (12 workers)`,
       `${output.highlight('progress')}        - Check V3 implementation progress`,
       `${output.highlight('statusline')}      - Generate dynamic statusline display`,
@@ -5714,7 +5716,17 @@ export const hooksCommand: Command = {
       '',
       output.bold('Agent Teams:'),
       `${output.highlight('teammate-idle')}  - Handle idle teammate (auto-assign tasks)`,
-      `${output.highlight('task-completed')} - Handle task completion (train patterns)`
+      `${output.highlight('task-completed')} - Handle task completion (train patterns)`,
+      '',
+      output.bold('v2 compatibility aliases (deprecated):'),
+      `${output.highlight('route-task')}     - Alias of route`,
+      `${output.highlight('session-start')}  - Alias of session-restore`,
+      `${output.highlight('pre-bash')}       - Alias of pre-command`,
+      `${output.highlight('post-bash')}      - Alias of post-command`,
+      '',
+      output.bold('Internal (spawned by hook handlers):'),
+      `${output.highlight('refresh-funnel')} - Background refresh of funnel message cache`,
+      `${output.highlight('refresh-advisor')}- Background refresh of advisor tip (ADR-316)`
     ]);
     output.writeln();
     output.writeln('Run "claude-flow hooks <subcommand> --help" for subcommand help');
@@ -5722,11 +5734,9 @@ export const hooksCommand: Command = {
     output.writeln(output.bold('V3 Features:'));
     output.printList([
       '🧠 ReasoningBank adaptive learning',
-      '⚡ Flash Attention (2.49x-7.47x speedup)',
-      '🔍 AgentDB integration (150x faster search)',
-      '📊 84.8% SWE-Bench solve rate',
-      '🎯 32.3% token reduction',
-      '🚀 2.8-4.4x speed improvement',
+      '⚡ Flash Attention integration',
+      '🔍 AgentDB integration with HNSW vector search',
+      '🎯 Token optimization via Agent Booster',
       '👥 Agent Teams integration (auto task assignment)'
     ]);
 
