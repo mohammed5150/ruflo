@@ -1,5 +1,5 @@
 ---
-name: "AgentDB Performance Optimization"
+name: agentdb-optimization
 description: "Optimize AgentDB performance with quantization (4-32x memory reduction), HNSW indexing, caching, and batch operations. Use when optimizing memory usage, improving search speed, or scaling to millions of vectors."
 ---
 
@@ -483,15 +483,16 @@ const adapter = await createAgentDBAdapter({
 
 ## Performance Benchmarks
 
-**Test System**: AMD Ryzen 9 5950X, 64GB RAM
+In-tree measurements (see `docs/reviews/intelligence-system-audit-2026-05-29.md` and
+`scripts/benchmark-intelligence.mjs`). Earlier 150x-12,500x search figures were upstream
+vendor numbers from a brute-force-fallback comparison, never reproduced here; do not quote them.
 
-| Operation | Vector Count | No Optimization | Optimized | Improvement |
-|-----------|-------------|-----------------|-----------|-------------|
-| Search | 10K | 15ms | 100µs | 150x |
-| Search | 100K | 150ms | 120µs | 1,250x |
-| Search | 1M | 100s | 8ms | 12,500x |
-| Batch Insert (100) | - | 1s | 2ms | 500x |
-| Memory Usage | 1M | 3GB | 96MB | 32x (binary) |
+| Operation | Measured | Notes |
+|-----------|----------|-------|
+| HNSW search (N=20k) | ~1.9x vs brute force | recall@10 ~0.99 |
+| HNSW search (N=5k) | ~3.2x-4.7x vs brute force | ANN wins above the crossover |
+| Int8 quantization | 3.84x compression | reconstruction cosine 0.99999 |
+| RaBitQ quantization | 32x compression | 0.60ms/query on a 14,760-vector index |
 
 ---
 

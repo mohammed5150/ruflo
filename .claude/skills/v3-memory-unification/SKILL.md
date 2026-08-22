@@ -1,5 +1,5 @@
 ---
-name: "V3 Memory Unification"
+name: v3-memory-unification
 description: "Unify 6+ memory systems into AgentDB with HNSW-indexed search. Implements ADR-006 (Unified Memory Service) and ADR-009 (Hybrid Memory Backend)."
 ---
 
@@ -78,7 +78,7 @@ class HNSWIndexer {
       dimensions,
       efConstruction: 200,
       M: 16,
-      speedupTarget: '150x-12500x'
+      speedupTarget: '~1.9x-4.7x measured'
     });
   }
 
@@ -98,7 +98,7 @@ class HNSWIndexer {
 const agentdb = new AgentDBAdapter({
   dimensions: 1536,
   indexType: 'HNSW',
-  speedupTarget: '150x-12500x'
+  speedupTarget: '~1.9x-4.7x measured'
 });
 ```
 
@@ -167,7 +167,7 @@ class SONAMemoryIntegration {
 ## Success Metrics
 
 - [ ] All 7 legacy memory systems migrated to AgentDB
-- [ ] 150x-12,500x search performance validated
+- [ ] HNSW search speedup validated in-tree (~1.9x-4.7x measured vs brute force)
 - [ ] 50-75% memory usage reduction achieved
 - [ ] Backward compatibility maintained
 - [ ] SONA learning patterns integrated

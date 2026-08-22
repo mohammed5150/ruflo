@@ -1,5 +1,5 @@
 ---
-name: "V3 Deep Integration"
+name: v3-integration-deep
 description: "Deep agentic-flow@alpha integration implementing ADR-001. Eliminates 10,000+ duplicate lines by building claude-flow as specialized extension rather than parallel implementation."
 ---
 
@@ -60,7 +60,7 @@ class SONAIntegration {
 class FlashAttentionIntegration {
   async optimizeAttention(): Promise<AttentionResult> {
     return this.agenticFlow.attention.flashAttention({
-      speedupTarget: '2.49x-7.47x',
+      speedupTarget: 'unverified', // no in-tree benchmark; do not quote upstream figures
       memoryReduction: '50-75%',
       mechanisms: ['multi-head', 'linear', 'local', 'global']
     });
@@ -74,7 +74,7 @@ class AgentDBIntegration {
   async setupCrossAgentMemory(): Promise<void> {
     await this.agentdb.enableCrossAgentSharing({
       indexType: 'HNSW',
-      speedupTarget: '150x-12500x',
+      speedupTarget: '~1.9x-4.7x measured', // vs brute force, see intelligence-system audit
       dimensions: 1536
     });
   }
@@ -179,7 +179,7 @@ class RLIntegration {
 ```typescript
 const attentionBenchmark = {
   baseline: 'current attention mechanism',
-  target: '2.49x-7.47x improvement',
+  target: 'unverified (pending in-tree benchmark)',
   memoryReduction: '50-75%',
   implementation: 'agentic-flow@alpha Flash Attention'
 };
@@ -189,7 +189,7 @@ const attentionBenchmark = {
 ```typescript
 const searchBenchmark = {
   baseline: 'linear search in current systems',
-  target: '150x-12,500x via HNSW indexing',
+  target: '~1.9x-4.7x measured via HNSW indexing (vs brute force)',
   implementation: 'agentic-flow@alpha AgentDB'
 };
 ```
