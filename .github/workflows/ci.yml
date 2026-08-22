@@ -72,6 +72,22 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/npm-ci-retry
 
+      - name: Setup pnpm (v3 workspace)
+        uses: pnpm/action-setup@v6
+        with:
+          version: '8.15.0'
+
+      - name: Install + build v3 workspace
+        # Several suites the root ratchet runs import @claude-flow/* v3
+        # packages whose entry points resolve into each package's dist/.
+        # With only the root npm ci, those suites could never pass — they
+        # sat permanently in scripts/ci-test-baseline.txt as unfixable
+        # entries. Installing and building v3 here lets them actually run.
+        working-directory: v3
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -r build
+
       - name: Run all tests
         # #3030: the historical suite has known debt, but new failing files
         # are release-blocking. The committed file-level baseline may only

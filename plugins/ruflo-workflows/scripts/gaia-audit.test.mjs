@@ -213,8 +213,23 @@ test('dynamic-eval: fixed-string exec + RegExp.exec pass (false-positive refinem
     ').trim();',
     'const m = /FINAL_ANSWER:\\s*(.+)/.exec(text);',
     '// eval( in a comment is ignored',
+    'const out = execFileSync(',
+    "  process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud',",
+    "  ['secrets', 'versions', 'access', 'latest', '--secret=ANTHROPIC_API_KEY'],",
+    "  { encoding: 'utf-8', shell: process.platform === 'win32' },",
+    ').trim();',
   ].join('\n');
   assert.equal(checkDynamicEval({ runnerSources: [{ path: 's', text: safe }] }).status, 'pass');
+});
+test('dynamic-eval: ternary with a NON-literal branch is still flagged', () => {
+  const evil = [
+    'const out = execFileSync(',
+    "  process.platform === 'win32' ? taskBinary : 'gcloud',",
+    ');',
+  ].join('\n');
+  const c = checkDynamicEval({ runnerSources: [{ path: 's', text: evil }] });
+  assert.equal(c.status, 'fail');
+  assert.ok(c.evidence.some((e) => e.includes('exec-nonliteral')));
 });
 test('dynamic-eval: no runner sources → skip (never a false pass)', () => {
   const c = checkDynamicEval({ runnerSources: [] });

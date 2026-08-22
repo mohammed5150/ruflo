@@ -200,11 +200,22 @@ function execFirstArg(lines, i, lookahead = 3) {
 /**
  * A first argument is "safe" when it is a plain string literal with no
  * interpolation — a fixed command cannot be derived from task content.
+ *
+ * Also accepted: a conditional whose BOTH branches are plain string literals
+ * and whose condition is a simple property/comparison expression (e.g. the
+ * cross-platform binary pick `process.platform === 'win32' ? 'gcloud.cmd' :
+ * 'gcloud'` used with a static execFileSync argv). Either way the resolved
+ * command is one of two fixed strings — nothing task-derived can reach it.
  */
+const LITERAL_STR = /(?:'[^'`$]*'|"[^"`$]*")/.source;
+const LITERAL_TERNARY_RE = new RegExp(
+  `^[\\w.\\s]+(?:[=!]==?\\s*${LITERAL_STR}\\s*)?\\?\\s*${LITERAL_STR}\\s*:\\s*${LITERAL_STR}\\s*[,)]?`,
+);
 function isLiteralArg(arg) {
   return /^'[^']*'\s*[,)]?/.test(arg)
     || /^"[^"]*"\s*[,)]?/.test(arg)
-    || /^`[^`$]*`\s*[,)]?/.test(arg);
+    || /^`[^`$]*`\s*[,)]?/.test(arg)
+    || (!arg.includes('${') && LITERAL_TERNARY_RE.test(arg));
 }
 
 function expandHome(p) {

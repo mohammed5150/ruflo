@@ -22,7 +22,7 @@
  * file (which is process-agnostic, so in-process contention is real
  * contention).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -34,6 +34,23 @@ import {
   deleteEntry,
   withMemoryDbLock,
 } from '../src/memory/memory-initializer.js';
+
+// The lost-update under test lives in the sql.js whole-image fallback writer.
+// When the AgentDB bridge is importable (full v3 workspace installed), the
+// initializer routes through it instead — and the bridge registry is a
+// process-wide singleton bound to a single database, so the per-test `dbPath`
+// isolation below silently stops isolating anything and the fallback path is
+// never exercised. CLAUDE_FLOW_DISABLE_BRIDGE=1 is the initializer's own
+// supported switch for pinning the raw sql.js path (see getBridge()).
+let savedDisableBridge: string | undefined;
+beforeAll(() => {
+  savedDisableBridge = process.env.CLAUDE_FLOW_DISABLE_BRIDGE;
+  process.env.CLAUDE_FLOW_DISABLE_BRIDGE = '1';
+});
+afterAll(() => {
+  if (savedDisableBridge === undefined) delete process.env.CLAUDE_FLOW_DISABLE_BRIDGE;
+  else process.env.CLAUDE_FLOW_DISABLE_BRIDGE = savedDisableBridge;
+});
 
 let tmp: string;
 let dbPath: string;

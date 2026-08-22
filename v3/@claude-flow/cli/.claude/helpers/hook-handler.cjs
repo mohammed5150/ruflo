@@ -585,11 +585,18 @@ const handlers = {
   }
 }
 
-// Hooks must ALWAYS exit 0 — Claude Code treats non-zero as "hook error"
-// and skips all subsequent hooks for the event.
-process.exitCode = 0;
-main().catch((e) => {
-  try { console.log(`[WARN] Hook handler error: ${e.message}`); } catch (_) {}
-}).finally(() => {
-  process.exit(0);
-});
+// Exported for unit testing (tests/hook-handler-runwithtimeout.test.cjs).
+module.exports = { runWithTimeout, INTELLIGENCE_TIMEOUT_MS };
+
+// Only run the CLI when executed directly — requiring this file (tests) must
+// not trigger main() or the unconditional process.exit(0) below.
+if (require.main === module) {
+  // Hooks must ALWAYS exit 0 — Claude Code treats non-zero as "hook error"
+  // and skips all subsequent hooks for the event.
+  process.exitCode = 0;
+  main().catch((e) => {
+    try { console.log(`[WARN] Hook handler error: ${e.message}`); } catch (_) {}
+  }).finally(() => {
+    process.exit(0);
+  });
+}

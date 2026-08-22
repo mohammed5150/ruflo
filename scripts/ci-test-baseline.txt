@@ -23,22 +23,16 @@
 #   The 19 remaining entries mostly REQUIRE v3 workspace deps that ci.yml's
 #   root-only `npm ci` never installs — fixing those means installing v3
 #   deps in the root CI job (or moving the suites to v3-ci), not test edits.
+# 2026-08-22 (5th pass): ci.yml's test job now installs + builds the v3
+#   workspace, unblocking the 9 dep-bound entries (all verified green with
+#   deps+dist present); memory trio fixed (2 test-premise fixes + a real
+#   regression: the #2790 threshold change to 0.7 silently re-broke #2558
+#   keyword recall — CLI default re-aligned to the 0.3 used everywhere
+#   else); ruvector-plugins example fixed (duplicate exports broke the
+#   module parse; HookEvent.PostToolCall does not exist) and
+#   swarm-integration's stale delta-vs-target assertion corrected.
 v3/@claude-flow/cli/__tests__/agenticow-tools.test.ts
-v3/@claude-flow/cli/__tests__/agntcy/agntcy-commands.test.ts
-v3/@claude-flow/cli/__tests__/mcp-http-foreground-2984.test.ts
 v3/@claude-flow/cli/__tests__/mcp-http-protocol-tools-2990.test.ts
 v3/@claude-flow/cli/__tests__/mcp-tool-filter-2726.test.ts
-v3/@claude-flow/cli/__tests__/memory-bridge-failure-diagnostics.test.ts
-v3/@claude-flow/cli/__tests__/memory-concurrent-write-loss-2878.test.ts
-v3/@claude-flow/cli/__tests__/memory-search-recall-2558.test.ts
-v3/@claude-flow/cli/__tests__/output.test.ts
 v3/@claude-flow/cli/__tests__/pq-validation.test.ts
 v3/@claude-flow/cli/__tests__/proxy-extract-archive.test.ts
-v3/@claude-flow/cli/__tests__/security-scan-enum-validation.test.ts
-v3/@claude-flow/cli/__tests__/validate-input-path-2352.test.ts
-v3/@claude-flow/cli/__tests__/version-anv.test.ts
-v3/@claude-flow/guidance/tests/hooks.test.ts
-v3/@claude-flow/guidance/tests/integration.test.ts
-v3/@claude-flow/plugin-iot-cognitum/__tests__/integration/sdk-client.test.ts
-v3/@claude-flow/plugins/examples/ruvector-plugins/ruvector-plugins.test.ts
-v3/__tests__/integration/swarm-integration.test.ts

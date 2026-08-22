@@ -388,7 +388,7 @@ export const mcpToolOptimizerPlugin = new PluginBuilder('mcp-tool-optimizer', '1
       .build(),
   ])
   .withHooks([
-    new HookBuilder(HookEvent.PostToolCall)
+    new HookBuilder(HookEvent.PostToolUse)
       .withName('tool-usage-record')
       .withDescription('Record tool usage')
       .withPriority(HookPriority.Low)

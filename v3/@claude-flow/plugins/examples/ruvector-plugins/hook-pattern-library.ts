@@ -439,7 +439,7 @@ export const hookPatternLibraryPlugin = new PluginBuilder('hook-pattern-library'
       .build(),
   ])
   .withHooks([
-    new HookBuilder(HookEvent.PostToolCall)
+    new HookBuilder(HookEvent.PostToolUse)
       .withName('hook-auto-record')
       .withDescription('Auto-record hook executions')
       .withPriority(HookPriority.Deferred)
