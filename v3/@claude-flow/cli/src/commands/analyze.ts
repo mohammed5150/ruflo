@@ -21,7 +21,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { writeFile } from 'fs/promises';
 import { resolve } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 // Dynamic import for AST analyzer
 async function getASTAnalyzer() {
@@ -1503,7 +1503,14 @@ const depsCommand: Command = {
         output.writeln(output.dim('-'.repeat(60)));
 
         try {
-          const auditRaw = execSync('npm audit --json 2>/dev/null', { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+          // #2770: shell only on Windows (npm ships as npm.cmd); argv is static.
+          const auditRaw = execFileSync('npm', ['audit', '--json'], {
+            encoding: 'utf-8',
+            maxBuffer: 10 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore'],
+            shell: process.platform === 'win32',
+            windowsHide: true,
+          });
           const audit = JSON.parse(auditRaw);
           const vulns = audit.metadata?.vulnerabilities || audit.vulnerabilities || {};
           const info = vulns.info || 0;

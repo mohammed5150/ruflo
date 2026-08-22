@@ -1,0 +1,21 @@
+{
+  "name": "ruflo-deepseek-harness",
+  "description": "DeepSeek model harness for ruflo — one-shot deepseek-chat and deepseek-reasoner (R1) completions via the OpenAI-compatible /v1/chat/completions endpoint. Surfaces the reasoner's chain-of-thought (reasoning_content) separately from the final answer; reads DEEPSEEK_API_KEY and degrades gracefully (exit 0, status:degraded envelope) when the key is unset or the API is unreachable, so ruflo never gains a hard runtime dependency.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ruvnet",
+    "url": "https://github.com/ruvnet"
+  },
+  "homepage": "https://github.com/ruvnet/ruflo",
+  "license": "MIT",
+  "keywords": [
+    "ruflo",
+    "deepseek",
+    "deepseek-chat",
+    "deepseek-reasoner",
+    "llm",
+    "chain-of-thought",
+    "harness",
+    "graceful-degradation"
+  ]
+}

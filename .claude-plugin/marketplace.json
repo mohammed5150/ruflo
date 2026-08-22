@@ -195,6 +195,11 @@
       "name": "ruflo-business-pods",
       "source": "./plugins/ruflo-business-pods",
       "description": "Business-domain pod templates for the federated business autopilot (ADR-164 Phase 2) — pod templates plus a dry-run-by-default single-tick runner that validates, reserves budget, and resolves agent roles before posting to the BBS room"
+    },
+    {
+      "name": "ruflo-deepseek-harness",
+      "source": "./plugins/ruflo-deepseek-harness",
+      "description": "DeepSeek model harness — deepseek-chat and deepseek-reasoner (R1) completions via the OpenAI-compatible API, surfacing the reasoner's chain-of-thought separately; degrades gracefully when DEEPSEEK_API_KEY is unset"
     }
   ]
 }

@@ -506,6 +506,10 @@ describe('Code Intelligence Types', () => {
       const code = 'const apiKey = "sk_live_abc123xyz"';
       const pattern = SECRET_PATTERNS[0];
       expect(pattern.test(code)).toBe(true);
+      pattern.lastIndex = 0; // shared /g regex — reset for other consumers
+      // End-to-end: the bare-identifier assignment form must be redacted
+      expect(maskSecrets(code)).toContain('[REDACTED]');
+      expect(maskSecrets(code)).not.toContain('sk_live_abc123xyz');
     });
   });
 
@@ -517,9 +521,13 @@ describe('Code Intelligence Types', () => {
     });
 
     it('should mask GitHub tokens', () => {
-      const code = 'const token = "ghp_abcdefghijklmnopqrstuvwxyz123456"';
+      // Real GitHub PATs are ghp_ + 36 chars (the old fixture's 32-char token
+      // is not a valid PAT shape). Bare-token context (no key = value form)
+      // proves the ghp_-specific pattern, not the key/value pattern.
+      const code = 'Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123456789';
       const masked = maskSecrets(code);
       expect(masked).toContain('[REDACTED]');
+      expect(masked).not.toContain('ghp_');
     });
 
     it('should mask AWS keys', () => {

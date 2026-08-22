@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assessMcpSchemaOverhead,
   filterAdvertisedMcpTools,
@@ -78,7 +79,12 @@ describe('MCP advertised-tool filtering (#2726)', () => {
   });
 
   it('applies filtering in the executable MCP fast path', () => {
-    const executable = readFileSync(join(process.cwd(), 'bin', 'cli.js'), 'utf8');
+    // Resolve against this test file, not process.cwd(): when vitest runs from
+    // the repo root, cwd's bin/cli.js is the umbrella proxy, not the CLI bin.
+    const executable = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'cli.js'),
+      'utf8'
+    );
     expect(executable).toContain('_filterAdvertisedMcpTools(listMCPTools())');
     expect(executable).toContain('CLAUDE_FLOW_MCP_TOOLS');
     expect(executable).toContain("arg === '--tools'");

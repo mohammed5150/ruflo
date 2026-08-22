@@ -289,4 +289,35 @@ describe('SafeExecutor', () => {
       await expect(executor.execute('bash', ['-c', 'rm -rf /'])).rejects.toThrow(SafeExecutorError);
     });
   });
+
+  describe('executeSync', () => {
+    it('should execute an allowlisted command and capture stdout', () => {
+      const result = executor.executeSync('echo', ['hello-sync']);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('hello-sync');
+      expect(result.command).toBe('echo');
+      expect(result.duration).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should block commands not in allowlist', () => {
+      expect(() => executor.executeSync('wget', ['http://evil.com'])).toThrow(SafeExecutorError);
+    });
+
+    it('should apply the same argument validation as execute()', () => {
+      expect(() => executor.executeSync('echo', ['hello; rm -rf /'])).toThrow(SafeExecutorError);
+      expect(() => executor.executeSync('echo', ['`rm -rf /`'])).toThrow(SafeExecutorError);
+      expect(() => executor.executeSync('echo', ['$(rm -rf /)'])).toThrow(SafeExecutorError);
+      expect(() => executor.executeSync('echo', ['hello\x00'])).toThrow(SafeExecutorError);
+    });
+
+    it('should throw COMMAND_NOT_FOUND for allowlisted but missing binaries', () => {
+      const ex = new SafeExecutor({ allowedCommands: ['definitely-not-a-real-binary-xyz'] });
+      expect(() => ex.executeSync('definitely-not-a-real-binary-xyz')).toThrow(SafeExecutorError);
+    });
+
+    it('should return the exit code for failing commands instead of throwing', () => {
+      const result = executor.executeSync('node', ['-e', 'process.exit(3)']);
+      expect(result.exitCode).toBe(3);
+    });
+  });
 });

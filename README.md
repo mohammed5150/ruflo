@@ -35,7 +35,7 @@ User --> Ruflo (CLI/MCP) --> Router --> Swarm --> Agents --> Memory --> LLM Prov
                           +---- Learning Loop <-------+
 ```
 
-> **New to Ruflo?** You don't need to learn 314 MCP tools or 26 CLI commands. After `init`, just use Claude Code normally — the hooks system automatically routes tasks, learns from successful patterns, and coordinates agents in the background.
+> **New to Ruflo?** You don't need to learn the hundreds of MCP tools or 50+ CLI commands. After `init`, just use Claude Code normally — the hooks system automatically routes tasks, learns from successful patterns, and coordinates agents in the background.
 
 <details>
 <summary><strong>📖 Background — where the name comes from</strong></summary>

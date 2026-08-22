@@ -94,6 +94,18 @@ export function validateLabel(label: string): string {
 }
 
 /**
+ * Enforce the "new file needs a dimension" precondition without touching the
+ * optional package, so handlers can validate BEFORE the degraded-path gate.
+ * Mirrors the check inside `openWithLineage`.
+ */
+export function assertDimensionForNewFile(file: string, dimension?: number): void {
+  const valid = typeof dimension === 'number' && Number.isInteger(dimension) && dimension > 0;
+  if (!valid && !existsSync(manifestFor(file)) && !existsSync(file)) {
+    throw new Error('dimension is required when creating a new memory file');
+  }
+}
+
+/**
  * Open (or create) a memory file, restoring its COW chain from the lineage
  * manifest when one exists. When neither the `.rvf` nor the manifest exists,
  * `dimension` is required to create a fresh base.

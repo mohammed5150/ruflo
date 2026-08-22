@@ -279,41 +279,67 @@ Bash("npx @claude-flow/cli@latest hooks worker dispatch --trigger optimize")
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
-## 🚀 V3 CLI Commands (26 Commands, 140+ Subcommands)
+## 🚀 V3 CLI Commands (50+ Commands)
+
+> Registry of truth: `src/commands/index.ts` (`commandLoaders`). ~10 core
+> commands load synchronously; everything else is lazy-loaded (PERF-03).
+> Don't trust per-command subcommand counts in docs — read the command file.
 
 ### Core Commands
 
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization with wizard, presets, skills, hooks |
-| `agent` | 8 | Agent lifecycle (spawn, list, status, stop, metrics, pool, health, logs) |
-| `swarm` | 6 | Multi-agent swarm coordination and orchestration |
-| `memory` | 11 | AgentDB memory with HNSW vector search (measured ~1.9x–4.7x vs brute force above crossover) |
-| `mcp` | 9 | MCP server management and tool execution |
-| `task` | 6 | Task creation, assignment, and lifecycle |
-| `session` | 7 | Session state management and persistence |
-| `config` | 7 | Configuration management and provider setup |
-| `status` | 3 | System status monitoring with watch mode |
-| `workflow` | 6 | Workflow execution and template management |
-| `hooks` | 17 | Self-learning hooks + 12 background workers |
-| `hive-mind` | 6 | Queen-led Byzantine fault-tolerant consensus |
+| Command | Description |
+|---------|-------------|
+| `init` | Project initialization with wizard, presets, skills, hooks |
+| `start` / `status` | Service startup and system status monitoring |
+| `agent` | Agent lifecycle (spawn, list, status, stop, metrics, pool, health, logs) |
+| `swarm` | Multi-agent swarm coordination and orchestration |
+| `memory` | AgentDB memory with HNSW vector search (measured ~1.9x–4.7x vs brute force above crossover) |
+| `mcp` | MCP server management and tool execution |
+| `task` / `session` | Task lifecycle; session state management and persistence |
+| `config` | Configuration management and provider setup |
+| `workflow` | Workflow execution and template management |
+| `hooks` | Self-learning hooks (35 subcommands) + background workers |
+| `hive-mind` | Queen-led Byzantine fault-tolerant consensus |
+| `daemon` / `process` | Background worker daemon and process management |
+| `migrate` | V2 to V3 migration with rollback support |
+| `version` | Installed version; `--explain` for the ANV catalog breakdown |
 
 ### Advanced Commands
 
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `daemon` | 5 | Background worker daemon (start, stop, status, trigger, enable) |
-| `neural` | 5 | Neural pattern training (train, status, patterns, predict, optimize) |
-| `security` | 6 | Security scanning (scan, audit, cve, threats, validate, report) |
-| `performance` | 5 | Performance profiling (benchmark, profile, metrics, optimize, report) |
-| `providers` | 5 | AI providers (list, add, remove, test, configure) |
-| `plugins` | 5 | Plugin management (list, install, uninstall, enable, disable) |
-| `deployment` | 5 | Deployment management (deploy, rollback, status, environments, release) |
-| `embeddings` | 4 | Vector embeddings (embed, batch, search, init) — agentic-flow ONNX backend (speedup unverified, no benchmark) |
-| `claims` | 4 | Claims-based authorization (check, grant, revoke, list) |
-| `migrate` | 5 | V2 to V3 migration with rollback support |
-| `doctor` | 1 | System diagnostics with health checks |
-| `completions` | 4 | Shell completions (bash, zsh, fish, powershell) |
+| Command | Description |
+|---------|-------------|
+| `neural` | Neural pattern training with WASM SIMD (MicroLoRA + Flash Attention) |
+| `security` | Security scanning (scan, audit, cve, threats, validate, report) |
+| `performance` / `benchmark` | Performance profiling; self-learning pre-training benchmarks (SONA, EWC++, MoE) |
+| `providers` | AI providers (list, add, remove, test, configure) |
+| `plugins` | Plugin management against the IPFS registry |
+| `deployment` | Deployment management (deploy, rollback, status, environments, release) |
+| `embeddings` | Vector embeddings — agentic-flow ONNX backend (speedup unverified, no benchmark) |
+| `claims` / `issues` | Claims-based authorization; GitHub issue claims (ADR-016) |
+| `policy` | Agentic policy engine — evaluate actions, manage rules/approvals, verify decision ledger (ADR-324) |
+| `verify` | Verify installed artifact against the signed witness manifest (ADR-095) |
+| `analyze` | Git-diff change risk assessment and classification |
+| `route` | Q-learning task routing |
+| `guidance` | Guidance control plane — compile CLAUDE.md into a policy bundle |
+| `ruvector` | RuVector PostgreSQL bridge management |
+| `appliance` / `appliance-advanced` | Build / Ed25519-sign self-contained `ruflo.rvf` appliances |
+| `transfer-store` | Decentralized (IPFS) pattern/plugin registry |
+| `autopilot` | Autonomous loop-driven task completion state |
+| `gaia-bench` | GAIA benchmark harness (ADR-133) |
+| `metaharness` | MetaHarness dispatcher (ADR-150) |
+| `eject` | Lift a ruflo project into a renamed standalone harness |
+| `doctor` / `completions` / `update` / `cleanup` / `progress` | Diagnostics, shell completions, update checks, hook-script cleanup, progress |
+
+### Cognitum Surface (ADR-301..321 — commercial-adjacency layer)
+
+| Command | Description |
+|---------|-------------|
+| `auth` | Cognitum identity: login/logout/status (PKCE browser flow, device flow, `--token-stdin`) (ADR-306) |
+| `proxy` | Local Meta LLM Proxy — cloud routing toggle + tier selection; local backends by default (ADR-304/307/321) |
+| `funnel` / `settings` | Lifecycle-funnel state and user-facing preferences wrapper (ADR-305/311) |
+| `advisor` | Co-pilot advisor tip in the statusline insight ticker (ADR-316) |
+| `spinner` / `announcements` | Ruflo entries in Claude Code spinner verbs / startup announcements (ADR-318/319) |
+| `transport` | AGNTCY/SLIM swarm transport selection — no-ops to local when unconfigured (ADR-380) |
 
 ### Quick CLI Examples
 
@@ -343,7 +369,11 @@ npx @claude-flow/cli@latest security scan --depth full
 npx @claude-flow/cli@latest performance benchmark --suite all
 ```
 
-## 🚀 Available Agents (60+ Types)
+## 🚀 Available Agents (100+ Types)
+
+> Definition files live in the repo's `.claude/agents/` (100+ markdown
+> definitions, organized by category) plus YAML definitions in
+> `v3/@claude-flow/agents/`.
 
 ### Core Development
 `coder`, `reviewer`, `tester`, `planner`, `researcher`
@@ -378,7 +408,9 @@ CVE remediation, input validation, path security:
 ### Testing & Validation
 `tdd-london-swarm`, `production-validator`
 
-## 🪝 V3 Hooks System (27 Hooks + 12 Workers)
+## 🪝 V3 Hooks System (35 Hook Subcommands + 12 Dispatch Workers)
+
+> Registry of truth: `hooksCommand.subcommands` in `src/commands/hooks.ts`.
 
 ### All Available Hooks
 
@@ -401,15 +433,24 @@ CVE remediation, input validation, path security:
 | `metrics` | View learning metrics dashboard | `--v3-dashboard`, `--format` |
 | `transfer` | Transfer patterns via IPFS registry | `store`, `from-project` |
 | `list` | List all registered hooks | `--format` |
-| `intelligence` | RuVector intelligence system | `trajectory-*`, `pattern-*`, `stats` |
-| `worker` | Background worker management | `list`, `dispatch`, `status`, `detect` |
+| `intelligence` | RuVector intelligence (SONA/MoE/HNSW) | `--status`, `--train`, `--enable-*` |
+| `notify` | Send a notification message | `--message`, `--level` |
+| `worker` | Background worker management | `list`, `dispatch`, `status`, `detect`, `cancel` |
 | `progress` | Check V3 implementation progress | `--detailed`, `--format` |
 | `statusline` | Generate dynamic statusline | `--json`, `--compact`, `--no-color` |
 | `coverage-route` | Route based on test coverage gaps | `--task`, `--path` |
 | `coverage-suggest` | Suggest coverage improvements | `--path` |
 | `coverage-gaps` | List coverage gaps with priorities | `--format`, `--limit` |
+| `token-optimize` | Agent Booster token optimization | `--task`, `--context` |
+| `model-route` | Route to optimal model tier (haiku/sonnet/opus) | `--task`, `--complexity` |
+| `model-outcome` | Record model routing outcome | `--task-id`, `--success` |
+| `model-stats` | Model routing statistics | `--format` |
+| `teammate-idle` | Idle teammate handling (Agent Teams) | `--auto-assign`, `--teammate-id` |
+| `task-completed` | Task completion handling (Agent Teams) | `--task-id`, `--train-patterns` |
 | `pre-bash` | (v2 compat) Alias for pre-command | Same as pre-command |
 | `post-bash` | (v2 compat) Alias for post-command | Same as post-command |
+| `refresh-funnel` | Internal: background funnel-cache refresh | spawned detached by hook handlers |
+| `refresh-advisor` | Internal: advisor-tip refresh (ADR-316) | spawned detached by hook handlers |
 
 ### 12 Background Workers
 
@@ -494,7 +535,9 @@ The 4-step intelligence pipeline:
 3. **DISTILL** - Extract key learnings via LoRA
 4. **CONSOLIDATE** - Prevent catastrophic forgetting via EWC++
 
-## 📦 Embeddings Package (v3.0.0-alpha.12)
+## 📦 Embeddings Package (`@claude-flow/embeddings`)
+
+> Version truth: `v3/@claude-flow/embeddings/package.json`.
 
 Features:
 - **sql.js**: Cross-platform SQLite persistent cache (WASM, no native compilation)
@@ -687,9 +730,9 @@ For a comprehensive overview of all Claude Flow V3 features, agents, commands, a
 **`.claude-flow/CAPABILITIES.md`** - Complete reference generated during init
 
 This includes:
-- All 60+ agent types with routing recommendations
-- All 26 CLI commands with 140+ subcommands
-- All 27 hooks + 12 background workers
+- All 100+ agent types with routing recommendations
+- All 50+ CLI commands
+- All 35 hook subcommands + 12 background dispatch workers
 - RuVector intelligence system details
 - Hive-Mind consensus mechanisms
 - Integration ecosystem (agentic-flow, agentdb, ruv-swarm, flow-nexus, agentic-jujutsu)

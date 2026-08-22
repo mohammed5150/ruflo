@@ -16,7 +16,10 @@ import type {
 // ----------------------------------------------------------------------------
 // HnswLite — small brute-force-degrading HNSW used ONLY by RvfBackend.
 // Inlined here by ADR-125 Phase 3 so the canonical `src/hnsw-index.ts` can be
-// the single HNSW implementation in the public surface. Not exported.
+// the single HNSW implementation in the public surface. Exported from THIS
+// module solely for tests/rvf-capability-verify.test.ts (which covered the
+// deleted src/hnsw-lite.ts); still absent from the package's top-level
+// surface — see the guard in index.ts and index.test.ts.
 // ----------------------------------------------------------------------------
 
 interface HnswSearchResult {
@@ -24,7 +27,7 @@ interface HnswSearchResult {
   score: number;
 }
 
-class HnswLite {
+export class HnswLite {
   private vectors = new Map<string, Float32Array>();
   private neighbors = new Map<string, Set<string>>();
   private readonly dimensions: number;
@@ -147,7 +150,7 @@ class HnswLite {
   }
 }
 
-function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];

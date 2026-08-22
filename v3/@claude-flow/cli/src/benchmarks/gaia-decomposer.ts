@@ -34,7 +34,7 @@
  * Refs: ADR-135, ADR-133, iter 29 finding, #2156
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,9 +137,11 @@ function resolveApiKey(supplied?: string): string {
   if (envKey && envKey.trim()) return envKey.trim();
 
   try {
-    const out = execSync(
-      'gcloud secrets versions access latest --secret=ANTHROPIC_API_KEY 2>/dev/null',
-      { encoding: 'utf-8', timeout: 10_000 },
+    const out = execFileSync(
+      process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud',
+      ['secrets', 'versions', 'access', 'latest', '--secret=ANTHROPIC_API_KEY'],
+      // shell only on Windows (.cmd shim); argv is fully static — no injection surface.
+      { encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' },
     ).trim();
     if (out) return out;
   } catch {

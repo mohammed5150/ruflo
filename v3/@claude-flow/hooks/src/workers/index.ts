@@ -416,6 +416,14 @@ export const WORKER_CONFIGS: Record<string, WorkerConfig> = {
     priority: WorkerPriority.High,
     timeout: 10_000,
   },
+  'v3progress': {
+    name: 'v3progress',
+    description: 'Track V3 implementation progress (CLI, MCP, hooks, packages)',
+    interval: 600_000,  // 10 min
+    enabled: true,
+    priority: WorkerPriority.Low,
+    timeout: 30_000,
+  },
 };
 
 // ============================================================================

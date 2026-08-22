@@ -86,8 +86,13 @@ async function resolveCodexInitializer(cwd: string): Promise<CodexInitializerCto
     },
     // Strategy 3: Global node_modules
     async () => {
-      const { execSync } = await import('child_process');
-      const globalPath = execSync('npm root -g', { encoding: 'utf-8' }).trim();
+      const { execFileSync } = await import('child_process');
+      // #2770: shell only on Windows (npm ships as npm.cmd); argv is static.
+      const globalPath = execFileSync('npm', ['root', '-g'], {
+        encoding: 'utf-8',
+        shell: process.platform === 'win32',
+        windowsHide: true,
+      }).trim();
       const codexPath = path.join(globalPath, '@claude-flow', 'codex', 'dist', 'index.js');
       if (fs.existsSync(codexPath)) {
         const mod = await import(`file://${codexPath}`);
@@ -748,16 +753,20 @@ const initClaudeAction = async (ctx: CommandContext): Promise<CommandResult> => 
       output.writeln();
       output.printInfo('Starting services...');
 
-      const { execSync } = await import('child_process');
+      const { execFileSync } = await import('child_process');
+      // #2770: npx ships as npx.cmd on Windows; shell only there. All argv
+      // below are hard-coded — no injection surface.
+      const npxShell = { shell: process.platform === 'win32', windowsHide: true } as const;
 
       // Initialize memory database
       if (startAll) {
         try {
           output.writeln(output.dim('  Initializing memory database...'));
-          execSync('npx @claude-flow/cli@latest memory init 2>/dev/null', {
+          execFileSync('npx', ['@claude-flow/cli@latest', 'memory', 'init'], {
             stdio: 'pipe',
             cwd: ctx.cwd,
-            timeout: 30000
+            timeout: 30000,
+            ...npxShell,
           });
           output.writeln(output.success('  ✓ Memory initialized'));
         } catch {
@@ -781,16 +790,17 @@ const initClaudeAction = async (ctx: CommandContext): Promise<CommandResult> => 
       // Fix: drop the shell `&`. `daemon start` (default non-foreground
       // mode) already forks its own detached background process via
       // startBackgroundDaemon() AND writes the PID file BEFORE returning,
-      // so execSync without `&` waits for the dedup-relevant PID-file
+      // so a synchronous spawn without `&` waits for the dedup-relevant PID-file
       // write but does NOT wait for the daemon itself to exit. Timeout
       // bumped to 30s for npx cold-cache scenarios.
       if (startDaemon) {
         try {
           output.writeln(output.dim('  Starting daemon...'));
-          execSync('npx @claude-flow/cli@latest daemon start 2>/dev/null', {
+          execFileSync('npx', ['@claude-flow/cli@latest', 'daemon', 'start'], {
             stdio: 'pipe',
             cwd: ctx.cwd,
-            timeout: 30000
+            timeout: 30000,
+            ...npxShell,
           });
           output.writeln(output.success('  ✓ Daemon started'));
         } catch {
@@ -805,10 +815,11 @@ const initClaudeAction = async (ctx: CommandContext): Promise<CommandResult> => 
       if (startAll) {
         try {
           output.writeln(output.dim('  Initializing swarm...'));
-          execSync('npx @claude-flow/cli@latest swarm init --topology hierarchical 2>/dev/null', {
+          execFileSync('npx', ['@claude-flow/cli@latest', 'swarm', 'init', '--topology', 'hierarchical'], {
             stdio: 'pipe',
             cwd: ctx.cwd,
-            timeout: 30000
+            timeout: 30000,
+            ...npxShell,
           });
           output.writeln(output.success('  ✓ Swarm initialized'));
         } catch {

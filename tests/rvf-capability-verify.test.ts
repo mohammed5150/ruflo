@@ -27,7 +27,9 @@ import { tmpdir } from 'node:os';
 // --- Module Imports ---
 import { RvfBackend } from '../v3/@claude-flow/memory/src/rvf-backend.js';
 import type { RvfBackendConfig } from '../v3/@claude-flow/memory/src/rvf-backend.js';
-import { HnswLite, cosineSimilarity } from '../v3/@claude-flow/memory/src/hnsw-lite.js';
+// hnsw-lite.ts was inlined into rvf-backend.ts by ADR-125 Phase 3; the class
+// is exported from there for this white-box suite only.
+import { HnswLite, cosineSimilarity } from '../v3/@claude-flow/memory/src/rvf-backend.js';
 import { RvfEventLog } from '../v3/@claude-flow/shared/src/events/rvf-event-log.js';
 import { RvfEmbeddingCache } from '../v3/@claude-flow/embeddings/src/rvf-embedding-cache.js';
 import { RvfEmbeddingService } from '../v3/@claude-flow/embeddings/src/rvf-embedding-service.js';

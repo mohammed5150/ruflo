@@ -93,7 +93,7 @@ const phase1 = async () => {
 const phase2 = async () => {
   // Parallel core system implementation
   await Promise.all([
-    Task("Memory unification", "Implement AgentDB with 150x-12,500x improvement", "v3-memory-specialist"),
+    Task("Memory unification", "Implement AgentDB with ~1.9x-4.7x (measured) improvement", "v3-memory-specialist"),
     Task("Swarm coordination", "Merge 4 coordination systems into unified engine", "swarm-specialist"),
     Task("MCP optimization", "Optimize MCP server performance", "mcp-specialist"),
     Task("Core implementation", "Implement DDD modular architecture", "core-implementer"),

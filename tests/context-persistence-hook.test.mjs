@@ -292,8 +292,14 @@ describe('resolveBackend', () => {
 // ============================================================================
 
 describe('createHashEmbedding', () => {
-  it('should produce 768-dimensional embedding', () => {
+  it('should produce 384-dimensional embedding by default (ONNX all-MiniLM-L6-v2 parity)', () => {
     const emb = createHashEmbedding('hello world');
+    assert.equal(emb.length, 384);
+    assert.ok(emb instanceof Float32Array);
+  });
+
+  it('should honor an explicit dimension argument (legacy 768-dim)', () => {
+    const emb = createHashEmbedding('hello world', 768);
     assert.equal(emb.length, 768);
     assert.ok(emb instanceof Float32Array);
   });

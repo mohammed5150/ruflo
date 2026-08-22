@@ -4,18 +4,30 @@ This directory contains the V3 monorepo packages. Root CLAUDE.md rules apply her
 
 ## Build & Test
 
+This directory is a separate pnpm workspace (`packageManager: pnpm@8.15.0`,
+lockfile `pnpm-lock.yaml`) — see "Development Workflow" in the root CLAUDE.md.
+
 ```bash
-# From v3/@claude-flow/<package>
+# Whole workspace
+pnpm install --frozen-lockfile && pnpm -r build && pnpm test
+
+# Or from a single v3/@claude-flow/<package>
 npm install && npm run build && npm test
 ```
 
+If you change any v3 `package.json` dependency, regenerate `pnpm-lock.yaml`
+in the SAME commit (`pnpm install --lockfile-only`) — CI hard-fails on drift.
+
 ## Packages
+
+Full table in the root CLAUDE.md ("Key Packages"). Highlights (read each
+`package.json` for version truth — counts drift):
 
 | Package | Path | Purpose |
 |---------|------|---------|
-| `@claude-flow/cli` | `@claude-flow/cli/` | CLI entry point (26 commands, 140+ subcommands) |
+| `@claude-flow/cli` | `@claude-flow/cli/` | CLI entry point (50+ commands; registry: `src/commands/index.ts`) |
 | `@claude-flow/guidance` | `@claude-flow/guidance/` | Governance control plane (compile, enforce, prove, evolve) |
-| `@claude-flow/hooks` | `@claude-flow/hooks/` | 17 hooks + 12 background workers |
+| `@claude-flow/hooks` | `@claude-flow/hooks/` | Lifecycle hooks (35 CLI subcommands) + background workers |
 | `@claude-flow/memory` | `@claude-flow/memory/` | AgentDB + HNSW vector search |
 | `@claude-flow/shared` | `@claude-flow/shared/` | Shared types and utilities |
 | `@claude-flow/security` | `@claude-flow/security/` | Input validation, path security, CVE remediation |

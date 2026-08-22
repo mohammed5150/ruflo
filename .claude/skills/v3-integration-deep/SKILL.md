@@ -17,8 +17,8 @@ Task("Integration architecture", "Design agentic-flow@alpha adapter layer", "v3-
 
 # Feature integration (parallel)
 Task("SONA integration", "Integrate 5 SONA learning modes", "v3-integration-architect")
-Task("Flash Attention", "Implement 2.49x-7.47x speedup", "v3-integration-architect")
-Task("AgentDB coordination", "Setup 150x-12,500x search", "v3-integration-architect")
+Task("Flash Attention", "Implement Flash Attention (speedup unverified in-tree)", "v3-integration-architect")
+Task("AgentDB coordination", "Setup ~1.9x-4.7x (measured) search", "v3-integration-architect")
 ```
 
 ## Code Deduplication Strategy
@@ -226,8 +226,8 @@ class BackwardCompatibility {
 ## Success Metrics
 
 - **Code Reduction**: <5,000 lines orchestration (vs 15,000+)
-- **Performance**: 2.49x-7.47x Flash Attention speedup
-- **Search**: 150x-12,500x AgentDB improvement
+- **Performance**: Flash Attention integration (speedup unverified in-tree)
+- **Search**: ~1.9x-4.7x (measured) AgentDB improvement
 - **Memory**: 50-75% usage reduction
 - **Feature Parity**: 100% v2 functionality maintained
 - **SONA**: <0.05ms adaptation time

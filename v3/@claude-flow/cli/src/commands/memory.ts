@@ -381,7 +381,13 @@ const searchCommand: Command = {
       name: 'threshold',
       description: 'Similarity threshold (0-1)',
       type: 'number',
-      default: 0.7
+      // 0.3 everywhere: the MCP memory_search tool, searchEntries(), and
+      // bridgeSearchEntries() all default to 0.3, and the #2558 keyword-recall
+      // floor (a full-coverage keyword hit scores >= 0.4) was engineered to
+      // clear it. A 0.7 default silently re-broke #2558: default `memory
+      // search` recalled nothing for exact keyword hits whose embedding
+      // cosine was low.
+      default: 0.3
     },
     {
       name: 'type',
@@ -447,10 +453,13 @@ const searchCommand: Command = {
     // #2790 fix — `||` discards an explicit `--threshold 0` (falsy) and
     // silently uses the fallback; that made `--threshold 0` return
     // FEWER results than `--threshold 0.01` (non-monotonic). Nullish
-    // coalescing preserves an explicit zero. Fallback aligned with the
-    // option's declared `default: 0.7` (was `0.3` — the two disagreed
-    // and --help advertised a default the code did not honor).
-    const threshold = ctx.flags.threshold as number ?? 0.7;
+    // coalescing preserves an explicit zero. Fallback kept in lockstep
+    // with the option's declared default above (#2790 alignment); the
+    // shared value is 0.3, matching every other search surface — see
+    // the note on the flag declaration. Re-aligning both to 0.7 would
+    // re-break #2558 keyword recall at default settings (the coverage
+    // floor guarantees full-coverage hits score >= 0.4, not >= 0.7).
+    const threshold = ctx.flags.threshold as number ?? 0.3;
     const searchType = ctx.flags.type as string || 'semantic';
     const buildHnsw = (ctx.flags['build-hnsw'] || ctx.flags.buildHnsw) as boolean;
     const requestedIntent = (ctx.flags.intent as string) || 'mixed';

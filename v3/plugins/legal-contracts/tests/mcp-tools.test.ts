@@ -1,7 +1,9 @@
 /**
  * Legal Contracts Plugin - MCP Tools Tests
  *
- * Tests for MCP tool handlers with mock data
+ * Tests for MCP tool handlers: registry surface, tool definitions (Zod input
+ * schemas), success/error result envelopes, RBAC authorization, matter
+ * isolation, and audit logging.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -12,91 +14,16 @@ import {
   obligationTrackTool,
   playbookMatchTool,
   legalContractsTools,
-  getTool,
-  getToolNames,
+  toolHandlers,
+  createToolContext,
+  type ToolContext,
 } from '../src/mcp-tools.js';
+import { LegalErrorCodes } from '../src/types.js';
 
-// Mock bridges
-vi.mock('../src/bridges/dag-bridge.js', () => ({
-  LegalDAGBridge: vi.fn().mockImplementation(() => ({
-    initialized: false,
-    initialize: vi.fn().mockResolvedValue(undefined),
-    extractClauses: vi.fn().mockResolvedValue([
-      {
-        id: 'clause-1',
-        type: 'indemnification',
-        text: 'The Contractor shall indemnify...',
-        position: { start: 100, end: 250 },
-        confidence: 0.92,
-      },
-      {
-        id: 'clause-2',
-        type: 'termination',
-        text: 'Either party may terminate...',
-        position: { start: 500, end: 650 },
-        confidence: 0.88,
-      },
-    ]),
-    analyzeRisks: vi.fn().mockResolvedValue([
-      {
-        id: 'risk-1',
-        category: 'financial',
-        severity: 'high',
-        description: 'Unlimited liability exposure',
-        clause: 'indemnification',
-        recommendation: 'Add cap on liability',
-      },
-    ]),
-    compareContracts: vi.fn().mockResolvedValue({
-      similarity: 0.75,
-      differences: [
-        {
-          type: 'modification',
-          baseText: 'Original clause text',
-          compareText: 'Modified clause text',
-          significance: 'high',
-        },
-      ],
-    }),
-    extractObligations: vi.fn().mockResolvedValue([
-      {
-        id: 'obl-1',
-        type: 'payment',
-        description: 'Payment due within 30 days',
-        party: 'Buyer',
-        deadline: '30 days from invoice',
-        status: 'pending',
-      },
-    ]),
-    matchPlaybook: vi.fn().mockResolvedValue({
-      matchScore: 0.68,
-      deviations: [
-        {
-          position: 'indemnification',
-          expected: 'Mutual indemnification',
-          actual: 'One-sided indemnification',
-          severity: 'high',
-        },
-      ],
-    }),
-  })),
-}));
-
-vi.mock('../src/bridges/mincut-bridge.js', () => ({
-  LegalMinCutBridge: vi.fn().mockImplementation(() => ({
-    initialized: false,
-    initialize: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
-// Mock context for testing
-const createMockContext = (overrides = {}) => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
+// Mock context for testing: real bridges (via createToolContext) plus the
+// governance fields (userId, userRoles, auditLogger, matterContext).
+const createMockContext = (overrides: Partial<ToolContext> = {}): ToolContext => ({
+  ...createToolContext(),
   userId: 'test-user',
   userRoles: ['partner'],
   auditLogger: {
@@ -108,6 +35,10 @@ const createMockContext = (overrides = {}) => ({
   },
   ...overrides,
 });
+
+/** Parse the JSON text payload of a tool result */
+const parsePayload = (result: { content: Array<{ type: 'text'; text: string }> }) =>
+  JSON.parse(result.content[0]!.text);
 
 describe('Legal Contracts MCP Tools', () => {
   beforeEach(() => {
@@ -138,35 +69,38 @@ describe('Legal Contracts MCP Tools', () => {
       }
     });
 
-    it('should have version 1.0.0', () => {
+    it('should have version 3.0.0-alpha.1', () => {
       for (const tool of legalContractsTools) {
-        expect(tool.version).toBe('1.0.0');
+        expect(tool.version).toBe('3.0.0-alpha.1');
       }
     });
 
-    it('should get tool by name', () => {
-      const tool = getTool('legal/clause-extract');
-      expect(tool).toBeDefined();
-      expect(tool?.name).toBe('legal/clause-extract');
+    it('should look up a tool handler by name', () => {
+      const handler = toolHandlers.get('legal/clause-extract');
+      expect(handler).toBeDefined();
+      expect(handler).toBe(clauseExtractTool.handler);
     });
 
     it('should return undefined for unknown tool', () => {
-      const tool = getTool('legal/unknown');
-      expect(tool).toBeUndefined();
+      const handler = toolHandlers.get('legal/unknown');
+      expect(handler).toBeUndefined();
     });
 
-    it('should get all tool names', () => {
-      const names = getToolNames();
-      expect(names).toHaveLength(5);
-      expect(names).toContain('legal/clause-extract');
+    it('should register a handler for every tool name', () => {
+      expect(toolHandlers.size).toBe(5);
+      for (const tool of legalContractsTools) {
+        expect(toolHandlers.get(tool.name)).toBeDefined();
+      }
     });
   });
 
   describe('legal/clause-extract', () => {
     it('should have correct tool definition', () => {
       expect(clauseExtractTool.name).toBe('legal/clause-extract');
-      expect(clauseExtractTool.inputSchema.required).toContain('document');
-      expect(clauseExtractTool.cacheable).toBe(true);
+      expect(clauseExtractTool.description.length).toBeGreaterThan(0);
+      // 'document' is required by the input schema
+      expect(clauseExtractTool.inputSchema.safeParse({}).success).toBe(false);
+      expect(clauseExtractTool.inputSchema.safeParse({ document: 'x' }).success).toBe(true);
     });
 
     it('should handle valid input', async () => {
@@ -179,9 +113,11 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
+      expect(data.success).toBe(true);
       expect(data.clauses).toBeDefined();
-      expect(data.extractionTime).toBeDefined();
+      expect(data.metadata).toBeDefined();
+      expect(data.durationMs).toBeDefined();
     });
 
     it('should use default options', async () => {
@@ -192,8 +128,14 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.jurisdiction).toBe('US'); // default
+      const data = parsePayload(result);
+      expect(data.success).toBe(true);
+      // Schema applies the 'US' jurisdiction default
+      const parsed = clauseExtractTool.inputSchema.safeParse(input);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect((parsed.data as { jurisdiction: string }).jurisdiction).toBe('US');
+      }
     });
 
     it('should handle matter context', async () => {
@@ -222,6 +164,9 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, context);
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe(LegalErrorCodes.MATTER_ACCESS_DENIED);
     });
 
     it('should reject document exceeding size limit', async () => {
@@ -232,14 +177,18 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.code).toBe(LegalErrorCodes.DOCUMENT_TOO_LARGE);
     });
   });
 
   describe('legal/risk-assess', () => {
     it('should have correct tool definition', () => {
       expect(riskAssessTool.name).toBe('legal/risk-assess');
-      expect(riskAssessTool.inputSchema.required).toContain('document');
-      expect(riskAssessTool.inputSchema.required).toContain('partyRole');
+      // 'document' and 'partyRole' are both required by the input schema
+      expect(riskAssessTool.inputSchema.safeParse({ partyRole: 'buyer' }).success).toBe(false);
+      expect(riskAssessTool.inputSchema.safeParse({ document: 'x' }).success).toBe(false);
+      expect(riskAssessTool.inputSchema.safeParse({ document: 'x', partyRole: 'buyer' }).success).toBe(true);
     });
 
     it('should handle valid input', async () => {
@@ -252,10 +201,11 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await riskAssessTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
       expect(data.risks).toBeDefined();
-      expect(data.overallRiskScore).toBeDefined();
-      expect(data.recommendations).toBeDefined();
+      expect(data.overallScore).toBeDefined();
+      expect(data.grade).toBeDefined();
+      expect(data.categorySummary).toBeDefined();
     });
 
     it('should handle industry context', async () => {
@@ -279,6 +229,9 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await riskAssessTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.success).toBe(false);
+      expect(data.code).toBeDefined();
     });
 
     it('should reject invalid partyRole', async () => {
@@ -310,8 +263,10 @@ describe('Legal Contracts MCP Tools', () => {
   describe('legal/contract-compare', () => {
     it('should have correct tool definition', () => {
       expect(contractCompareTool.name).toBe('legal/contract-compare');
-      expect(contractCompareTool.inputSchema.required).toContain('baseDocument');
-      expect(contractCompareTool.inputSchema.required).toContain('compareDocument');
+      // 'baseDocument' and 'compareDocument' are both required
+      expect(contractCompareTool.inputSchema.safeParse({ compareDocument: 'x' }).success).toBe(false);
+      expect(contractCompareTool.inputSchema.safeParse({ baseDocument: 'x' }).success).toBe(false);
+      expect(contractCompareTool.inputSchema.safeParse({ baseDocument: 'x', compareDocument: 'y' }).success).toBe(true);
     });
 
     it('should handle valid input', async () => {
@@ -324,10 +279,11 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await contractCompareTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.similarity).toBeDefined();
-      expect(data.differences).toBeDefined();
-      expect(data.comparisonTime).toBeDefined();
+      const data = parsePayload(result);
+      expect(data.similarityScore).toBeDefined();
+      expect(data.changes).toBeDefined();
+      expect(data.summary).toBeDefined();
+      expect(data.durationMs).toBeDefined();
     });
 
     it('should use default comparison mode', async () => {
@@ -339,7 +295,7 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await contractCompareTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
       expect(data.mode).toBe('full'); // default
     });
 
@@ -378,6 +334,8 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await contractCompareTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.success).toBe(false);
     });
 
     it('should reject documents exceeding size limit', async () => {
@@ -389,18 +347,22 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await contractCompareTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.code).toBe(LegalErrorCodes.DOCUMENT_TOO_LARGE);
     });
   });
 
   describe('legal/obligation-track', () => {
     it('should have correct tool definition', () => {
       expect(obligationTrackTool.name).toBe('legal/obligation-track');
-      expect(obligationTrackTool.inputSchema.required).toContain('document');
+      // 'document' is required by the input schema
+      expect(obligationTrackTool.inputSchema.safeParse({}).success).toBe(false);
+      expect(obligationTrackTool.inputSchema.safeParse({ document: 'x' }).success).toBe(true);
     });
 
     it('should handle valid input', async () => {
       const input = {
-        document: 'Agreement with obligations...',
+        document: 'Agreement with obligations. The Buyer shall pay within 30 days.',
         party: 'Vendor Inc.',
         obligationTypes: ['payment', 'delivery'],
       };
@@ -408,7 +370,7 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await obligationTrackTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
       expect(data.obligations).toBeDefined();
       expect(data.timeline).toBeDefined();
     });
@@ -458,30 +420,34 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await obligationTrackTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.success).toBe(false);
     });
   });
 
   describe('legal/playbook-match', () => {
     it('should have correct tool definition', () => {
       expect(playbookMatchTool.name).toBe('legal/playbook-match');
-      expect(playbookMatchTool.inputSchema.required).toContain('document');
-      expect(playbookMatchTool.inputSchema.required).toContain('playbook');
+      // 'document' and 'playbook' are both required
+      expect(playbookMatchTool.inputSchema.safeParse({ playbook: '{}' }).success).toBe(false);
+      expect(playbookMatchTool.inputSchema.safeParse({ document: 'x' }).success).toBe(false);
+      expect(playbookMatchTool.inputSchema.safeParse({ document: 'x', playbook: '{}' }).success).toBe(true);
     });
 
     it('should handle valid input', async () => {
       const input = {
-        document: 'Contract to evaluate...',
-        playbook: '{"positions": [{"clause": "indemnification", "requirement": "mutual"}]}',
+        document: 'Contract to evaluate. The Contractor shall indemnify the Client.',
+        playbook: '{"id":"pb-1","name":"Test Playbook","contractType":"General","jurisdiction":"US","partyRole":"buyer","version":"1.0.0","positions":[]}',
         strictness: 'moderate',
       };
 
       const result = await playbookMatchTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.matchScore).toBeDefined();
-      expect(data.deviations).toBeDefined();
-      expect(data.recommendations).toBeDefined();
+      const data = parsePayload(result);
+      expect(data.matches).toBeDefined();
+      expect(data.summary).toBeDefined();
+      expect(data.negotiationPriorities).toBeDefined();
     });
 
     it('should use default strictness', async () => {
@@ -493,15 +459,19 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await playbookMatchTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.strictness).toBe('moderate'); // default
+      // Schema applies the 'moderate' strictness default
+      const parsed = playbookMatchTool.inputSchema.safeParse(input);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect((parsed.data as { strictness: string }).strictness).toBe('moderate');
+      }
     });
 
     it('should handle priority clauses', async () => {
       const input = {
         document: 'Contract...',
         playbook: '{}',
-        prioritizeClauses: ['indemnification', 'liability'],
+        prioritizeClauses: ['indemnification', 'limitation_of_liability'],
       };
 
       const result = await playbookMatchTool.handler(input, createMockContext());
@@ -524,7 +494,7 @@ describe('Legal Contracts MCP Tools', () => {
       }
     });
 
-    it('should reject unauthorized access (playbook-match is partner only)', async () => {
+    it('should reject unauthorized access (associate lacks playbook-match)', async () => {
       const context = createMockContext({
         userRoles: ['associate'], // No access to playbook-match
       });
@@ -537,6 +507,8 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await playbookMatchTool.handler(input, context);
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.code).toBe(LegalErrorCodes.MATTER_ACCESS_DENIED);
     });
 
     it('should reject playbook exceeding size limit', async () => {
@@ -548,6 +520,8 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await playbookMatchTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
+      const data = parsePayload(result);
+      expect(data.code).toBe(LegalErrorCodes.DOCUMENT_TOO_LARGE);
     });
   });
 
@@ -654,6 +628,20 @@ describe('Legal Contracts MCP Tools', () => {
         })
       );
     });
+
+    it('should log failed operations with success=false', async () => {
+      const auditLogger = { log: vi.fn().mockResolvedValue(undefined) };
+      const context = createMockContext({ auditLogger, userRoles: ['client'] });
+
+      await clauseExtractTool.handler({ document: 'Contract...' }, context);
+
+      expect(auditLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolName: 'clause-extract',
+          success: false,
+        })
+      );
+    });
   });
 
   describe('Error Handling', () => {
@@ -665,8 +653,9 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, createMockContext());
 
       expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
       expect(data.error).toBe(true);
+      expect(data.success).toBe(false);
     });
 
     it('should include error code in response', async () => {
@@ -677,8 +666,9 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler({ document: 'Contract...' }, context);
 
       expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text!);
+      const data = parsePayload(result);
       expect(data.code).toBeDefined();
+      expect(data.code).toBe(LegalErrorCodes.MATTER_ACCESS_DENIED);
     });
   });
 
@@ -691,9 +681,9 @@ describe('Legal Contracts MCP Tools', () => {
       const result = await clauseExtractTool.handler(input, createMockContext());
 
       expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.extractionTime).toBeDefined();
-      expect(typeof data.extractionTime).toBe('number');
+      const data = parsePayload(result);
+      expect(data.durationMs).toBeDefined();
+      expect(typeof data.durationMs).toBe('number');
     });
   });
 });

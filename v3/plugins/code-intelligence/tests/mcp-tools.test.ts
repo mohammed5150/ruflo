@@ -1,10 +1,19 @@
 /**
  * Code Intelligence Plugin - MCP Tools Tests
  *
- * Tests for MCP tool handlers with mock data
+ * Tests for the MCP tool handlers against the current contract:
+ * - Tools are `MCPTool` objects with zod `inputSchema`, `category`, `version`
+ * - Handlers take `(input, ToolContext)` where the context carries real
+ *   GNN/MinCut bridges plus a security config (`createToolContext`)
+ * - Results are `{ content: [{ type: 'text', text }], data? }`; errors are
+ *   reported in-band as `{ success: false, error, durationMs }` JSON
+ * - Handler lookup goes through the exported `toolHandlers` map
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   semanticSearchTool,
   architectureAnalyzeTool,
@@ -12,102 +21,92 @@ import {
   splitSuggestTool,
   learnPatternsTool,
   codeIntelligenceTools,
-  getTool,
-  getToolNames,
+  toolHandlers,
+  createToolContext,
+  type ToolContext,
 } from '../src/mcp-tools.js';
 
-// Mock bridges
-vi.mock('../src/bridges/hnsw-bridge.js', () => ({
-  CodeHNSWBridge: vi.fn().mockImplementation(() => ({
-    initialized: false,
-    initialize: vi.fn().mockResolvedValue(undefined),
-    searchSemantic: vi.fn().mockResolvedValue([
-      {
-        id: 'result-1',
-        path: 'src/auth/login.ts',
-        content: 'async function login(username, password) { ... }',
-        score: 0.92,
-        language: 'typescript',
-      },
-      {
-        id: 'result-2',
-        path: 'src/auth/session.ts',
-        content: 'function createSession(user) { ... }',
-        score: 0.85,
-        language: 'typescript',
-      },
-    ]),
-    count: vi.fn().mockResolvedValue(5000),
-  })),
-}));
+const TOOL_NAMES = [
+  'code/semantic-search',
+  'code/architecture-analyze',
+  'code/refactor-impact',
+  'code/split-suggest',
+  'code/learn-patterns',
+];
 
-vi.mock('../src/bridges/gnn-bridge.js', () => ({
-  CodeGNNBridge: vi.fn().mockImplementation(() => ({
-    initialized: false,
-    initialize: vi.fn().mockResolvedValue(undefined),
-    analyzeArchitecture: vi.fn().mockResolvedValue({
-      components: [
-        { name: 'AuthModule', type: 'module', files: 5, dependencies: 3 },
-        { name: 'UserService', type: 'service', files: 3, dependencies: 2 },
-      ],
-      metrics: {
-        modularity: 0.72,
-        coupling: 0.35,
-        cohesion: 0.68,
-      },
-      issues: [
-        { type: 'circular_dependency', components: ['AuthModule', 'UserService'], severity: 'medium' },
-      ],
-    }),
-    analyzeRefactorImpact: vi.fn().mockResolvedValue({
-      directImpact: ['src/user.ts', 'src/auth.ts'],
-      indirectImpact: ['src/api/routes.ts', 'tests/user.test.ts'],
-      riskLevel: 'medium',
-      breakingChanges: ['UserService.getById signature changed'],
-    }),
-    suggestSplit: vi.fn().mockResolvedValue([
-      {
-        file: 'src/utils.ts',
-        reason: 'File exceeds 500 lines with multiple responsibilities',
-        suggestedSplits: [
-          { name: 'string-utils.ts', functions: ['capitalize', 'truncate', 'slugify'] },
-          { name: 'date-utils.ts', functions: ['formatDate', 'parseDate', 'addDays'] },
-        ],
-      },
-    ]),
-    learnPatterns: vi.fn().mockResolvedValue({
-      patterns: [
-        { name: 'Repository Pattern', occurrences: 12, confidence: 0.88 },
-        { name: 'Factory Pattern', occurrences: 5, confidence: 0.75 },
-      ],
-      antiPatterns: [
-        { name: 'God Object', files: ['src/app.ts'], severity: 'high' },
-      ],
-    }),
-  })),
-}));
+// Fixture workspace with real files so handlers run end-to-end against the
+// actual bridges (no mocks — the bridges have a pure-JS fallback path).
+let fixtureDir: string;
+let context: ToolContext;
 
-// Mock context for testing
-const createMockContext = (overrides = {}) => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-  userId: 'test-user',
-  ...overrides,
+/** Parse the JSON payload every tool writes into content[0].text */
+function payload(result: { content: Array<{ type: 'text'; text: string }> }): any {
+  expect(result.content).toHaveLength(1);
+  expect(result.content[0].type).toBe('text');
+  return JSON.parse(result.content[0].text);
+}
+
+beforeAll(() => {
+  fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-intel-mcp-'));
+
+  fs.writeFileSync(
+    path.join(fixtureDir, 'auth.ts'),
+    [
+      "import { createSession } from './session.js';",
+      '',
+      'export async function login(username: string, password: string) {',
+      '  // authentication login handler validates user credentials',
+      '  return createSession(username);',
+      '}',
+      '',
+    ].join('\n'),
+  );
+
+  fs.writeFileSync(
+    path.join(fixtureDir, 'session.ts'),
+    [
+      'export function createSession(user: string) {',
+      '  return { user, id: Math.random().toString(36) };',
+      '}',
+      '',
+    ].join('\n'),
+  );
+
+  // Circular pair for circular-dependency detection
+  fs.writeFileSync(
+    path.join(fixtureDir, 'util-a.ts'),
+    "import { b } from './util-b.js';\nexport const a = () => b;\n",
+  );
+  fs.writeFileSync(
+    path.join(fixtureDir, 'util-b.ts'),
+    "import { a } from './util-a.js';\nexport const b = () => a;\n",
+  );
+
+  // File with fake secrets, for end-to-end secret masking through the tool
+  fs.writeFileSync(
+    path.join(fixtureDir, 'config.ts'),
+    [
+      '// apiKey configuration constants for the service',
+      'export const apiKey = "sk_live_abc123xyz";',
+      'export const settings = { "api_key": "sk_live_abc123xyz" };',
+      '',
+    ].join('\n'),
+  );
+
+  // Test file, for the excludeTests scope option
+  fs.writeFileSync(
+    path.join(fixtureDir, 'auth.test.ts'),
+    '// authentication login function test spec\nexport const t = 1;\n',
+  );
+
+  context = createToolContext();
+});
+
+afterAll(() => {
+  fs.rmSync(fixtureDir, { recursive: true, force: true });
 });
 
 describe('Code Intelligence MCP Tools', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   describe('Tool Registry', () => {
     it('should export all 5 tools', () => {
       expect(codeIntelligenceTools).toHaveLength(5);
@@ -115,11 +114,9 @@ describe('Code Intelligence MCP Tools', () => {
 
     it('should have correct tool names', () => {
       const toolNames = codeIntelligenceTools.map(t => t.name);
-      expect(toolNames).toContain('code/semantic-search');
-      expect(toolNames).toContain('code/architecture-analyze');
-      expect(toolNames).toContain('code/refactor-impact');
-      expect(toolNames).toContain('code/split-suggest');
-      expect(toolNames).toContain('code/learn-patterns');
+      for (const name of TOOL_NAMES) {
+        expect(toolNames).toContain(name);
+      }
     });
 
     it('should have category code-intelligence', () => {
@@ -128,540 +125,474 @@ describe('Code Intelligence MCP Tools', () => {
       }
     });
 
-    it('should have version 0.1.0', () => {
+    it('should carry a consistent semver version on every tool', () => {
       for (const tool of codeIntelligenceTools) {
-        expect(tool.version).toBe('0.1.0');
+        expect(tool.version).toBe('3.0.0-alpha.1');
       }
     });
 
-    it('should get tool by name', () => {
-      const tool = getTool('code/semantic-search');
-      expect(tool).toBeDefined();
-      expect(tool?.name).toBe('code/semantic-search');
+    it('should expose a handler for every tool name', () => {
+      expect(toolHandlers.size).toBe(5);
+      for (const name of TOOL_NAMES) {
+        expect(toolHandlers.get(name)).toBeTypeOf('function');
+      }
     });
 
     it('should return undefined for unknown tool', () => {
-      const tool = getTool('code/unknown');
-      expect(tool).toBeUndefined();
-    });
-
-    it('should get all tool names', () => {
-      const names = getToolNames();
-      expect(names).toHaveLength(5);
-      expect(names).toContain('code/semantic-search');
+      expect(toolHandlers.get('code/unknown')).toBeUndefined();
     });
   });
 
   describe('code/semantic-search', () => {
     it('should have correct tool definition', () => {
       expect(semanticSearchTool.name).toBe('code/semantic-search');
-      expect(semanticSearchTool.inputSchema.required).toContain('query');
-      expect(semanticSearchTool.cacheable).toBe(true);
+      // zod schema: query is required, defaults are applied
+      expect(semanticSearchTool.inputSchema.safeParse({}).success).toBe(false);
+      const parsed = semanticSearchTool.inputSchema.safeParse({ query: 'x' });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.searchType).toBe('semantic');
+        expect(parsed.data.topK).toBe(10);
+      }
     });
 
     it('should handle valid input', async () => {
       const input = {
         query: 'authentication login function',
+        scope: { paths: [fixtureDir] },
         topK: 10,
       };
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
+      const result = await semanticSearchTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.results).toBeDefined();
+      expect(data.success).toBe(true);
       expect(Array.isArray(data.results)).toBe(true);
-      expect(data.searchTime).toBeDefined();
+      expect(data.results.length).toBeGreaterThan(0);
+      expect(data.results.some((r: any) => r.filePath.endsWith('auth.ts'))).toBe(true);
+      expect(typeof data.durationMs).toBe('number');
     });
 
     it('should handle language filter', async () => {
       const input = {
-        query: 'error handling',
-        language: 'typescript',
+        query: 'authentication login function',
+        scope: { paths: [fixtureDir], languages: ['typescript'] },
       };
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
+      const result = await semanticSearchTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-    });
-
-    it('should handle search type filter', async () => {
-      const types = ['function', 'class', 'interface', 'type', 'variable', 'comment', 'any'] as const;
-
-      for (const searchType of types) {
-        const input = {
-          query: 'user data',
-          searchType,
-        };
-
-        const result = await semanticSearchTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(true);
+      for (const r of data.results) {
+        expect(r.language).toBe('typescript');
       }
     });
 
-    it('should handle path filter', async () => {
+    it('should exclude test files when excludeTests is set', async () => {
       const input = {
-        query: 'API endpoint',
-        pathFilter: 'src/api/',
+        query: 'authentication login function',
+        scope: { paths: [fixtureDir], excludeTests: true },
       };
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
+      const result = await semanticSearchTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(true);
+      expect(data.results.length).toBeGreaterThan(0);
+      expect(data.results.some((r: any) => /\.test\.ts$/.test(r.filePath))).toBe(false);
     });
 
     it('should reject missing query', async () => {
-      const input = {
-        topK: 10,
-      };
+      const result = await semanticSearchTool.handler({ topK: 10 } as any, context);
+      const data = payload(result);
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
 
     it('should reject query exceeding max length', async () => {
-      const input = {
-        query: 'a'.repeat(1001),
-      };
+      const result = await semanticSearchTool.handler(
+        { query: 'a'.repeat(5001) } as any,
+        context,
+      );
+      const data = payload(result);
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
 
     it('should reject topK outside valid range', async () => {
-      const input = {
-        query: 'test',
-        topK: 0, // below min
-      };
+      for (const topK of [0, 1001]) {
+        const result = await semanticSearchTool.handler(
+          { query: 'test', topK } as any,
+          context,
+        );
+        const data = payload(result);
+        expect(data.success).toBe(false);
+      }
+    });
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
+    it('should reject path traversal in scope paths', async () => {
+      const result = await semanticSearchTool.handler(
+        { query: 'test', scope: { paths: ['../outside'] } } as any,
+        context,
+      );
+      const data = payload(result);
 
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/traversal/i);
     });
   });
 
   describe('code/architecture-analyze', () => {
     it('should have correct tool definition', () => {
       expect(architectureAnalyzeTool.name).toBe('code/architecture-analyze');
-      expect(architectureAnalyzeTool.inputSchema.required).toContain('targetPath');
-      expect(architectureAnalyzeTool.cacheable).toBe(true);
+      const parsed = architectureAnalyzeTool.inputSchema.safeParse({});
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.rootPath).toBe('.'); // default
+      }
     });
 
     it('should handle valid input', async () => {
       const input = {
-        targetPath: 'src/',
-        analysisTypes: ['dependencies', 'modularity'],
+        rootPath: fixtureDir,
+        analysis: ['dependency_graph', 'circular_deps', 'component_coupling'],
       };
 
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
+      const result = await architectureAnalyzeTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.components).toBeDefined();
-      expect(data.metrics).toBeDefined();
-      expect(data.analysisTime).toBeDefined();
+      expect(data.success).toBe(true);
+      expect(data.rootPath).toBe(fixtureDir);
+      expect(data.dependencyGraph).toBeDefined();
+      expect(data.dependencyGraph.nodes.length).toBeGreaterThanOrEqual(5);
+      expect(Array.isArray(data.circularDeps)).toBe(true);
+      expect(Array.isArray(data.couplingMetrics)).toBe(true);
+      expect(data.summary.totalFiles).toBe(data.dependencyGraph.nodes.length);
+      expect(typeof data.durationMs).toBe('number');
     });
 
-    it('should handle all analysis types', async () => {
-      const types = ['dependencies', 'modularity', 'complexity', 'coupling', 'cohesion', 'layers'] as const;
+    it('should detect the util-a/util-b circular dependency', async () => {
+      const input = { rootPath: fixtureDir, analysis: ['circular_deps'] };
 
-      const input = {
-        targetPath: 'src/',
-        analysisTypes: [...types],
-      };
+      const result = await architectureAnalyzeTool.handler(input as any, context);
+      const data = payload(result);
 
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(true);
+      expect(data.circularDeps.length).toBeGreaterThanOrEqual(1);
+      const cycleFiles = data.circularDeps.flatMap((c: any) => c.cycle).join(' ');
+      expect(cycleFiles).toContain('util-');
     });
 
-    it('should handle depth option', async () => {
-      const input = {
-        targetPath: 'src/',
-        depth: 5,
-      };
+    it('should only include requested analyses', async () => {
+      const input = { rootPath: fixtureDir, analysis: ['component_coupling'] };
 
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
+      const result = await architectureAnalyzeTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.couplingMetrics)).toBe(true);
+      expect(data.dependencyGraph).toBeUndefined();
+      expect(data.circularDeps).toBeUndefined();
     });
 
-    it('should handle exclude patterns', async () => {
-      const input = {
-        targetPath: 'src/',
-        excludePatterns: ['node_modules', '*.test.ts'],
-      };
+    it('should reject path traversal in rootPath', async () => {
+      const result = await architectureAnalyzeTool.handler(
+        { rootPath: '../outside' } as any,
+        context,
+      );
+      const data = payload(result);
 
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/traversal/i);
     });
 
-    it('should reject missing targetPath', async () => {
-      const input = {
-        analysisTypes: ['dependencies'],
-      };
+    it('should reject rootPath exceeding max length', async () => {
+      const result = await architectureAnalyzeTool.handler(
+        { rootPath: 'a'.repeat(501) } as any,
+        context,
+      );
+      const data = payload(result);
 
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
-    });
-
-    it('should reject targetPath exceeding max length', async () => {
-      const input = {
-        targetPath: 'a'.repeat(501),
-      };
-
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
   });
 
   describe('code/refactor-impact', () => {
     it('should have correct tool definition', () => {
       expect(refactorImpactTool.name).toBe('code/refactor-impact');
-      expect(refactorImpactTool.inputSchema.required).toContain('targetPath');
-      expect(refactorImpactTool.inputSchema.required).toContain('changeType');
-      expect(refactorImpactTool.cacheable).toBe(false);
+      // changes is required and must be non-empty
+      expect(refactorImpactTool.inputSchema.safeParse({}).success).toBe(false);
+      expect(refactorImpactTool.inputSchema.safeParse({ changes: [] }).success).toBe(false);
+      const parsed = refactorImpactTool.inputSchema.safeParse({
+        changes: [{ file: 'src/x.ts', type: 'rename' }],
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.depth).toBe(3); // default
+        expect(parsed.data.includeTests).toBe(true); // default
+      }
     });
 
     it('should handle valid input', async () => {
       const input = {
-        targetPath: 'src/services/user.ts',
-        changeType: 'rename',
-        description: 'Rename UserService to UserRepository',
+        changes: [
+          {
+            file: path.join(fixtureDir, 'session.ts'),
+            type: 'rename',
+            details: { oldName: 'createSession', newName: 'openSession' },
+          },
+        ],
       };
 
-      const result = await refactorImpactTool.handler(input, createMockContext());
+      const result = await refactorImpactTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.directImpact).toBeDefined();
-      expect(data.indirectImpact).toBeDefined();
-      expect(data.riskLevel).toBeDefined();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.impactedFiles)).toBe(true);
+      expect(data.summary).toBeDefined();
+      expect(['low', 'medium', 'high']).toContain(data.summary.totalRisk);
+      expect(Array.isArray(data.suggestedOrder)).toBe(true);
+      expect(Array.isArray(data.breakingChanges)).toBe(true);
+      expect(typeof data.durationMs).toBe('number');
     });
 
     it('should handle all change types', async () => {
-      const types = ['rename', 'move', 'delete', 'signature_change', 'type_change', 'dependency_change'] as const;
+      const types = ['rename', 'move', 'delete', 'extract', 'inline'] as const;
 
-      for (const changeType of types) {
+      for (const type of types) {
         const input = {
-          targetPath: 'src/test.ts',
-          changeType,
+          changes: [{ file: path.join(fixtureDir, 'auth.ts'), type }],
         };
-
-        const result = await refactorImpactTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
+        const result = await refactorImpactTool.handler(input as any, context);
+        const data = payload(result);
+        expect(data.success).toBe(true);
       }
     });
 
-    it('should handle include tests option', async () => {
-      const input = {
-        targetPath: 'src/service.ts',
-        changeType: 'delete',
-        includeTests: true,
-      };
+    it('should reject missing changes', async () => {
+      const result = await refactorImpactTool.handler({} as any, context);
+      const data = payload(result);
 
-      const result = await refactorImpactTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
 
-    it('should handle depth option', async () => {
+    it('should reject invalid change type', async () => {
       const input = {
-        targetPath: 'src/core.ts',
-        changeType: 'signature_change',
-        depth: 3,
+        changes: [{ file: path.join(fixtureDir, 'auth.ts'), type: 'invalid_change' }],
       };
 
-      const result = await refactorImpactTool.handler(input, createMockContext());
+      const result = await refactorImpactTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
 
-    it('should reject missing targetPath', async () => {
+    it('should reject path traversal in change files', async () => {
       const input = {
-        changeType: 'rename',
+        changes: [{ file: '../outside/evil.ts', type: 'rename' }],
       };
 
-      const result = await refactorImpactTool.handler(input, createMockContext());
+      const result = await refactorImpactTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBe(true);
-    });
-
-    it('should reject missing changeType', async () => {
-      const input = {
-        targetPath: 'src/test.ts',
-      };
-
-      const result = await refactorImpactTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
-    });
-
-    it('should reject invalid changeType', async () => {
-      const input = {
-        targetPath: 'src/test.ts',
-        changeType: 'invalid_change',
-      };
-
-      const result = await refactorImpactTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/traversal/i);
     });
   });
 
   describe('code/split-suggest', () => {
     it('should have correct tool definition', () => {
       expect(splitSuggestTool.name).toBe('code/split-suggest');
-      expect(splitSuggestTool.inputSchema.required).toContain('targetPath');
-      expect(splitSuggestTool.cacheable).toBe(true);
-    });
-
-    it('should handle valid input', async () => {
-      const input = {
-        targetPath: 'src/utils.ts',
-        threshold: 300,
-      };
-
-      const result = await splitSuggestTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.suggestions).toBeDefined();
-      expect(data.analysisTime).toBeDefined();
-    });
-
-    it('should handle all split strategies', async () => {
-      const strategies = ['responsibility', 'cohesion', 'size', 'complexity'] as const;
-
-      for (const strategy of strategies) {
-        const input = {
-          targetPath: 'src/',
-          strategy,
-        };
-
-        const result = await splitSuggestTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
+      expect(splitSuggestTool.inputSchema.safeParse({}).success).toBe(false); // targetPath required
+      const parsed = splitSuggestTool.inputSchema.safeParse({ targetPath: './src' });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.strategy).toBe('minimize_coupling'); // default
       }
     });
 
-    it('should use default threshold', async () => {
-      const input = {
-        targetPath: 'src/',
-      };
+    it('should handle valid input', async () => {
+      const input = { targetPath: fixtureDir, targetModules: 2 };
 
-      const result = await splitSuggestTool.handler(input, createMockContext());
+      const result = await splitSuggestTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.threshold).toBe(500); // default
-    });
-
-    it('should handle include patterns', async () => {
-      const input = {
-        targetPath: 'src/',
-        includePatterns: ['*.ts', '*.tsx'],
-      };
-
-      const result = await splitSuggestTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
+      expect(data.success).toBe(true);
+      expect(data.targetPath).toBe(fixtureDir);
+      expect(data.strategy).toBe('minimize_coupling'); // default applied
+      expect(Array.isArray(data.modules)).toBe(true);
+      expect(data.modules.length).toBeGreaterThanOrEqual(1);
+      expect(data.quality).toBeDefined();
+      expect(data.migrationSteps.length).toBeGreaterThan(0);
+      expect(typeof data.durationMs).toBe('number');
     });
 
     it('should reject missing targetPath', async () => {
-      const input = {
-        threshold: 300,
-      };
+      const result = await splitSuggestTool.handler({ targetModules: 2 } as any, context);
+      const data = payload(result);
 
-      const result = await splitSuggestTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
 
-    it('should reject threshold outside valid range', async () => {
-      const tooLow = {
-        targetPath: 'src/',
-        threshold: 49, // below min of 50
-      };
+    it('should reject targetModules outside valid range', async () => {
+      for (const targetModules of [1, 51]) {
+        const result = await splitSuggestTool.handler(
+          { targetPath: fixtureDir, targetModules } as any,
+          context,
+        );
+        const data = payload(result);
+        expect(data.success).toBe(false);
+      }
+    });
 
-      const result = await splitSuggestTool.handler(tooLow, createMockContext());
-      expect(result.isError).toBe(true);
+    it('should reject path traversal in targetPath', async () => {
+      const result = await splitSuggestTool.handler(
+        { targetPath: '../outside' } as any,
+        context,
+      );
+      const data = payload(result);
+
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/traversal/i);
     });
   });
 
   describe('code/learn-patterns', () => {
     it('should have correct tool definition', () => {
       expect(learnPatternsTool.name).toBe('code/learn-patterns');
-      expect(learnPatternsTool.inputSchema.required).toContain('targetPath');
-      expect(learnPatternsTool.cacheable).toBe(true);
+      const parsed = learnPatternsTool.inputSchema.safeParse({});
+      expect(parsed.success).toBe(true); // everything optional with defaults
+      if (parsed.success) {
+        expect(parsed.data.minOccurrences).toBe(3); // default
+      }
     });
 
     it('should handle valid input', async () => {
       const input = {
-        targetPath: 'src/',
-        patternTypes: ['design_patterns', 'anti_patterns'],
+        patternTypes: ['bug_patterns', 'refactor_patterns'],
+        minOccurrences: 2,
       };
 
-      const result = await learnPatternsTool.handler(input, createMockContext());
+      const result = await learnPatternsTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.patterns).toBeDefined();
-      expect(data.antiPatterns).toBeDefined();
-      expect(data.analysisTime).toBeDefined();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.patterns)).toBe(true);
+      expect(data.patterns.length).toBeGreaterThan(0);
+      expect(data.summary.patternsFound).toBe(data.patterns.length);
+      expect(data.summary.byType).toBeDefined();
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.durationMs).toBe('number');
     });
 
-    it('should handle all pattern types', async () => {
-      const types = ['design_patterns', 'anti_patterns', 'idioms', 'conventions', 'architecture'] as const;
-
-      const input = {
-        targetPath: 'src/',
-        patternTypes: [...types],
-      };
-
-      const result = await learnPatternsTool.handler(input, createMockContext());
-      expect(result.isError).toBeUndefined();
+    it('should reject minOccurrences outside valid range', async () => {
+      for (const minOccurrences of [0, 101]) {
+        const result = await learnPatternsTool.handler({ minOccurrences } as any, context);
+        const data = payload(result);
+        expect(data.success).toBe(false);
+      }
     });
 
-    it('should handle language filter', async () => {
-      const input = {
-        targetPath: 'src/',
-        language: 'typescript',
-      };
+    it('should reject invalid pattern types', async () => {
+      const result = await learnPatternsTool.handler(
+        { patternTypes: ['not_a_pattern_type'] } as any,
+        context,
+      );
+      const data = payload(result);
 
-      const result = await learnPatternsTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
-    });
-
-    it('should handle min confidence threshold', async () => {
-      const input = {
-        targetPath: 'src/',
-        minConfidence: 0.8,
-      };
-
-      const result = await learnPatternsTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
-    });
-
-    it('should reject missing targetPath', async () => {
-      const input = {
-        patternTypes: ['design_patterns'],
-      };
-
-      const result = await learnPatternsTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
-    });
-
-    it('should reject minConfidence outside valid range', async () => {
-      const input = {
-        targetPath: 'src/',
-        minConfidence: 1.5, // above max of 1.0
-      };
-
-      const result = await learnPatternsTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
     });
   });
 
   describe('Security - Secret Masking', () => {
     it('should mask secrets in search results', async () => {
-      // This tests that the tool doesn't expose secrets
       const input = {
-        query: 'api key configuration',
+        query: 'apiKey configuration constants',
+        scope: { paths: [fixtureDir] },
       };
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
+      const result = await semanticSearchTool.handler(input as any, context);
+      const data = payload(result);
 
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-
-      // Results should not contain unmasked secrets
+      expect(data.success).toBe(true);
+      const configHits = data.results.filter((r: any) => r.filePath.endsWith('config.ts'));
+      expect(configHits.length).toBeGreaterThan(0);
       for (const r of data.results) {
-        expect(r.content).not.toMatch(/sk-[a-zA-Z0-9]{48}/); // OpenAI key pattern
-        expect(r.content).not.toMatch(/AKIA[0-9A-Z]{16}/); // AWS key pattern
+        expect(r.snippet).not.toContain('sk_live_abc123xyz');
+        expect(r.context).not.toContain('sk_live_abc123xyz');
       }
+      expect(configHits[0].snippet).toContain('[REDACTED]');
+    });
+
+    it('should not mask when maskSecrets is disabled', async () => {
+      const noMaskContext = createToolContext({ maskSecrets: false });
+      const input = {
+        query: 'apiKey configuration constants',
+        scope: { paths: [fixtureDir] },
+      };
+
+      const result = await semanticSearchTool.handler(input as any, noMaskContext);
+      const data = payload(result);
+
+      expect(data.success).toBe(true);
+      const configHits = data.results.filter((r: any) => r.filePath.endsWith('config.ts'));
+      expect(configHits.length).toBeGreaterThan(0);
+      expect(configHits[0].snippet).toContain('sk_live_abc123xyz');
     });
   });
 
   describe('Error Handling', () => {
-    it('should handle validation errors gracefully', async () => {
-      const input = {
-        query: '', // Invalid empty query
-      };
+    it('should handle validation errors gracefully (no throw, in-band error)', async () => {
+      const result = await semanticSearchTool.handler({ query: '' } as any, context);
+      const data = payload(result);
 
-      const result = await semanticSearchTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.error).toBe(true);
-      expect(data.message).toBeDefined();
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
+      expect(data.error.length).toBeGreaterThan(0);
     });
 
-    it('should include timestamp in error response', async () => {
-      const input = {
-        targetPath: '', // Invalid
-      };
-
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-
-      expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.timestamp).toBeDefined();
-    });
-  });
-
-  describe('Performance Logging', () => {
-    it('should log duration on success', async () => {
-      const mockLogger = {
-        debug: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      };
-
-      const input = { query: 'test function' };
-      await semanticSearchTool.handler(input, { logger: mockLogger });
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('completed'),
-        expect.objectContaining({ durationMs: expect.any(String) })
+    it('should include durationMs in error responses', async () => {
+      const result = await architectureAnalyzeTool.handler(
+        { rootPath: 'a'.repeat(501) } as any,
+        context,
       );
-    });
+      const data = payload(result);
 
-    it('should include analysis time in results', async () => {
-      const input = {
-        targetPath: 'src/',
-      };
-
-      const result = await architectureAnalyzeTool.handler(input, createMockContext());
-
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text!);
-      expect(data.analysisTime).toBeDefined();
-      expect(typeof data.analysisTime).toBe('number');
+      expect(data.success).toBe(false);
+      expect(typeof data.durationMs).toBe('number');
+      expect(data.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
 
-  describe('Output Format', () => {
-    it('should support different output formats', async () => {
-      const formats = ['json', 'markdown', 'summary'] as const;
+  describe('Performance Reporting', () => {
+    it('should include durationMs in successful results', async () => {
+      const result = await architectureAnalyzeTool.handler(
+        { rootPath: fixtureDir, analysis: ['dependency_graph'] } as any,
+        context,
+      );
+      const data = payload(result);
 
-      for (const outputFormat of formats) {
-        const input = {
-          targetPath: 'src/',
-          outputFormat,
-        };
+      expect(data.success).toBe(true);
+      expect(typeof data.durationMs).toBe('number');
+      expect(data.durationMs).toBeGreaterThanOrEqual(0);
+    });
 
-        const result = await architectureAnalyzeTool.handler(input, createMockContext());
-        expect(result.isError).toBeUndefined();
-      }
+    it('should attach the structured result as data alongside text content', async () => {
+      const result = await semanticSearchTool.handler(
+        { query: 'authentication login', scope: { paths: [fixtureDir] } } as any,
+        context,
+      );
+
+      expect(result.data).toBeDefined();
+      expect((result.data as any).success).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toEqual(result.data);
     });
   });
 });

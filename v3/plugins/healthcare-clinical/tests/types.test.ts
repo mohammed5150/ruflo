@@ -380,8 +380,10 @@ describe('Healthcare Clinical Types', () => {
       const data = { patients: [], searchTime: 100 };
       const result = successResult(data);
 
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual(data);
+      expect(result.isError).toBeUndefined();
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0]!.type).toBe('text');
+      expect(JSON.parse(result.content[0]!.text)).toEqual(data);
     });
 
     it('should create success result with metadata', () => {
@@ -389,31 +391,35 @@ describe('Healthcare Clinical Types', () => {
       const metadata = { durationMs: 50, cached: true, wasmUsed: false };
       const result = successResult(data, metadata);
 
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual(data);
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)).toEqual(data);
       expect(result.metadata).toEqual(metadata);
     });
 
     it('should create error result from string', () => {
       const result = errorResult('Something went wrong');
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Something went wrong');
+      expect(result.isError).toBe(true);
+      const payload = JSON.parse(result.content[0]!.text);
+      expect(payload.error).toBe('Something went wrong');
+      expect(payload.timestamp).toBeDefined();
     });
 
     it('should create error result from Error object', () => {
       const error = new Error('Test error message');
       const result = errorResult(error);
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Test error message');
+      expect(result.isError).toBe(true);
+      const payload = JSON.parse(result.content[0]!.text);
+      expect(payload.error).toBe('Test error message');
     });
 
     it('should create error result with metadata', () => {
       const metadata = { durationMs: 10 };
       const result = errorResult('Error', metadata);
 
-      expect(result.success).toBe(false);
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0]!.text).error).toBe('Error');
       expect(result.metadata).toEqual(metadata);
     });
   });

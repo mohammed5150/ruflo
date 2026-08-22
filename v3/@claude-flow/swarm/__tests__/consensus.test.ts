@@ -329,19 +329,21 @@ describe('Byzantine Consensus', () => {
 
       const proposal = await byzantine.propose({ value: 42 });
 
-      // Simulate votes from 3 nodes (2f+1)
-      const vote: ConsensusVote = {
-        voterId: 'node-2',
-        approve: true,
-        confidence: 1.0,
-        timestamp: new Date(),
-      };
+      // Simulate votes from 3 nodes (2f+1) — n=5 (4 added + self), f=1,
+      // so consensus needs 3 approving votes before awaitConsensus resolves.
+      for (const voterId of ['node-2', 'node-3', 'node-4']) {
+        const vote: ConsensusVote = {
+          voterId,
+          approve: true,
+          confidence: 1.0,
+          timestamp: new Date(),
+        };
+        await byzantine.vote(proposal.id, vote);
+      }
 
-      await byzantine.vote(proposal.id, vote);
-
-      // Check if we need more votes
       const result = await byzantine.awaitConsensus(proposal.id);
       expect(result.proposalId).toBe(proposal.id);
+      expect(result.approved).toBe(true);
     });
   });
 });

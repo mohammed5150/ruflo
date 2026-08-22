@@ -54,12 +54,24 @@ const AUTOLOAD_FAILURE: ExecResult = {
 let workDir: string;
 let calls: ExecCall[];
 
-/**
- * Installs a fake `@claude-flow/security` whose SafeExecutor records every
- * invocation and defers the result to `handler`, keyed by the command name.
- */
-function mockExecutor(handler: (call: ExecCall) => ExecResult | Promise<ExecResult>): void {
-  calls = [];
+// Hoisted mock state: `vi.mock` (hoisted, always applied) replaces the earlier
+// per-test `vi.doMock` + dynamic-import pattern, which intermittently failed
+// to register under load — the real SafeExecutor then ran a real `powershell`
+// / `tar` against a nonexistent archive and the test flaked.
+const mockState = vi.hoisted(() => ({
+  calls: [] as Array<{ allowedCommands: string[]; command: string; args: string[] }>,
+  handler: ((_call: { allowedCommands: string[]; command: string; args: string[] }):
+    | { exitCode: number; stdout: string; stderr: string }
+    | Promise<{ exitCode: number; stdout: string; stderr: string }> => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+  })) as (call: { allowedCommands: string[]; command: string; args: string[] }) =>
+    | { exitCode: number; stdout: string; stderr: string }
+    | Promise<{ exitCode: number; stdout: string; stderr: string }>,
+}));
+
+vi.mock('@claude-flow/security', () => {
   class FakeSafeExecutor {
     private allowedCommands: string[];
     constructor(config: { allowedCommands: string[]; timeout?: number }) {
@@ -67,11 +79,21 @@ function mockExecutor(handler: (call: ExecCall) => ExecResult | Promise<ExecResu
     }
     async execute(command: string, args: string[]): Promise<ExecResult> {
       const call: ExecCall = { allowedCommands: this.allowedCommands, command, args };
-      calls.push(call);
-      return handler(call);
+      mockState.calls.push(call);
+      return mockState.handler(call);
     }
   }
-  vi.doMock('@claude-flow/security', () => ({ SafeExecutor: FakeSafeExecutor }));
+  return { SafeExecutor: FakeSafeExecutor };
+});
+
+/**
+ * Points the fake `@claude-flow/security` SafeExecutor (installed via the
+ * hoisted `vi.mock` above) at `handler`, and resets the recorded call log.
+ */
+function mockExecutor(handler: (call: ExecCall) => ExecResult | Promise<ExecResult>): void {
+  mockState.calls.length = 0;
+  calls = mockState.calls;
+  mockState.handler = handler;
 }
 
 async function loadExtractArchive() {
@@ -89,7 +111,6 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(workDir, { recursive: true, force: true });
   vi.restoreAllMocks();
-  vi.doUnmock('@claude-flow/security');
 });
 
 describe('extractArchive — tar.gz', () => {

@@ -606,16 +606,15 @@ describe('TopologyManager', () => {
         await topology.addNode(`agent-${i}`, 'peer');
       }
 
-      // Wait for auto-rebalance
-      await new Promise(resolve => setTimeout(resolve, 6000));
+      // rebalance() no-ops within 5s of the last rebalance; rewind the
+      // cooldown clock instead of sleeping past the vitest test timeout
+      // (the old version slept 6s inside a 5s timeout and could never pass).
+      (topology as unknown as { lastRebalance: Date }).lastRebalance =
+        new Date(Date.now() - 10_000);
 
       await topology.rebalance();
 
-      // Allow time for event
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Event might not emit if no rebalancing needed
-      expect(eventEmitted).toBeDefined();
+      expect(eventEmitted).toBe(true);
     });
   });
 });

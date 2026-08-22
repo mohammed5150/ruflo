@@ -4335,7 +4335,7 @@ const statuslineCommand: Command = {
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const fs = await import('fs');
     const path = await import('path');
-    const { execSync } = await import('child_process');
+    const { execFileSync } = await import('child_process');
 
     // Get learning stats from memory database
     function getLearningStats() {
@@ -4511,21 +4511,28 @@ const statuslineCommand: Command = {
       const isWindows = process.platform === 'win32';
 
       try {
-        const rootCmd = isWindows
-          ? 'git rev-parse --show-toplevel 2>NUL'
-          : 'git rev-parse --show-toplevel 2>/dev/null';
-        const branchCmd = isWindows
-          ? 'git branch --show-current 2>NUL || echo.'
-          : 'git branch --show-current 2>/dev/null || echo ""';
-        const root = execSync(rootCmd, { encoding: 'utf-8' }).trim();
+        // No shell: git is a real executable on every platform; the old
+        // `|| echo` shell fallbacks become per-call try/catch.
+        const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
         name = path.basename(root) || name;
         if (identityMode === 'author') {
-          const authorCmd = isWindows
-            ? 'git config user.name 2>NUL || echo user'
-            : 'git config user.name 2>/dev/null || echo "user"';
-          name = execSync(authorCmd, { encoding: 'utf-8' }).trim() || 'user';
+          try {
+            name = execFileSync('git', ['config', 'user.name'], {
+              encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim() || 'user';
+          } catch {
+            name = 'user';
+          }
         }
-        gitBranch = execSync(branchCmd, { encoding: 'utf-8' }).trim();
+        try {
+          gitBranch = execFileSync('git', ['branch', '--show-current'], {
+            encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+          }).trim();
+        } catch {
+          gitBranch = '';
+        }
         if (gitBranch === '.') gitBranch = '';
       } catch {
         // Ignore
@@ -5685,36 +5692,32 @@ export const hooksCommand: Command = {
     output.writeln('Usage: claude-flow hooks <subcommand> [options]');
     output.writeln();
     output.writeln('Subcommands:');
+    // Generated from hooksCommand.subcommands so this help can never drift
+    // from the registered subcommand set again (a hand-maintained copy here
+    // previously listed 27 of the 35 registered subcommands).
+    const DEPRECATED_ALIASES: Record<string, string> = {
+      'route-task': 'route',
+      'session-start': 'session-restore',
+      'pre-bash': 'pre-command',
+      'post-bash': 'post-command',
+    };
+    const INTERNAL_SUBCOMMANDS = new Set(['refresh-funnel', 'refresh-advisor']);
+    const subs: Command[] = hooksCommand.subcommands ?? [];
+    const padWidth = Math.max(...subs.map((s) => s.name.length)) + 1;
+    const helpLine = (s: Command): string =>
+      `${output.highlight(s.name.padEnd(padWidth))}- ${s.description}`;
     output.printList([
-      `${output.highlight('pre-edit')}        - Get context before editing files`,
-      `${output.highlight('post-edit')}       - Record editing outcomes for learning`,
-      `${output.highlight('pre-command')}     - Assess risk before executing commands`,
-      `${output.highlight('post-command')}    - Record command execution outcomes`,
-      `${output.highlight('pre-task')}        - Record task start and get agent suggestions`,
-      `${output.highlight('post-task')}       - Record task completion for learning`,
-      `${output.highlight('session-end')}     - End current session and persist state`,
-      `${output.highlight('session-restore')} - Restore a previous session`,
-      `${output.highlight('route')}           - Route tasks to optimal agents`,
-      `${output.highlight('explain')}         - Explain routing decisions`,
-      `${output.highlight('pretrain')}        - Bootstrap intelligence from repository`,
-      `${output.highlight('build-agents')}    - Generate optimized agent configs`,
-      `${output.highlight('metrics')}         - View learning metrics dashboard`,
-      `${output.highlight('transfer')}        - Transfer patterns from another project`,
-      `${output.highlight('list')}            - List all registered hooks`,
-      `${output.highlight('worker')}          - Background worker management (12 workers)`,
-      `${output.highlight('progress')}        - Check V3 implementation progress`,
-      `${output.highlight('statusline')}      - Generate dynamic statusline display`,
-      `${output.highlight('coverage-route')}  - Route tasks based on coverage gaps (ruvector)`,
-      `${output.highlight('coverage-suggest')}- Suggest coverage improvements`,
-      `${output.highlight('coverage-gaps')}   - List all coverage gaps with agents`,
-      `${output.highlight('token-optimize')} - Token optimization (agentic-flow integration)`,
-      `${output.highlight('model-route')}    - Route to optimal model (haiku/sonnet/opus)`,
-      `${output.highlight('model-outcome')}  - Record model routing outcome`,
-      `${output.highlight('model-stats')}    - View model routing statistics`,
+      ...subs
+        .filter((s) => !(s.name in DEPRECATED_ALIASES) && !INTERNAL_SUBCOMMANDS.has(s.name))
+        .map(helpLine),
       '',
-      output.bold('Agent Teams:'),
-      `${output.highlight('teammate-idle')}  - Handle idle teammate (auto-assign tasks)`,
-      `${output.highlight('task-completed')} - Handle task completion (train patterns)`
+      output.bold('v2 compatibility aliases (deprecated):'),
+      ...subs
+        .filter((s) => s.name in DEPRECATED_ALIASES)
+        .map((s) => `${output.highlight(s.name.padEnd(padWidth))}- Alias of ${DEPRECATED_ALIASES[s.name]}`),
+      '',
+      output.bold('Internal (spawned by hook handlers):'),
+      ...subs.filter((s) => INTERNAL_SUBCOMMANDS.has(s.name)).map(helpLine),
     ]);
     output.writeln();
     output.writeln('Run "claude-flow hooks <subcommand> --help" for subcommand help');
@@ -5722,11 +5725,9 @@ export const hooksCommand: Command = {
     output.writeln(output.bold('V3 Features:'));
     output.printList([
       '🧠 ReasoningBank adaptive learning',
-      '⚡ Flash Attention (2.49x-7.47x speedup)',
-      '🔍 AgentDB integration (150x faster search)',
-      '📊 84.8% SWE-Bench solve rate',
-      '🎯 32.3% token reduction',
-      '🚀 2.8-4.4x speed improvement',
+      '⚡ Flash Attention integration',
+      '🔍 AgentDB integration with HNSW vector search',
+      '🎯 Token optimization via Agent Booster',
       '👥 Agent Teams integration (auto task assignment)'
     ]);
 

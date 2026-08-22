@@ -18,11 +18,19 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// `@claude-flow/memory` is externalized in vitest.config.ts (it is a try/catch
-// dynamic import that degrades to the sql.js path), so the import inside
-// getRegistry() always throws here. That is the init failure under test — the
-// assertions deliberately check the recorded/cleared behaviour rather than the
-// flavour of the underlying error, which is not the property that matters.
+// Force the init failure under test deterministically: mock the
+// `@claude-flow/memory` import inside getRegistry() to throw. (Previously this
+// file relied on the package being unresolvable at runtime, but with the v3
+// workspace installed the real import succeeds, the bridge genuinely
+// initializes, and the "failed init" premise silently evaporates — writing
+// test entries into a real database along the way.) The assertions
+// deliberately check the recorded/cleared behaviour rather than the flavour
+// of the underlying error, which is not the property that matters. The mock
+// factory is lazy, so the suites below that never trigger getRegistry()
+// (Windows gate, log suppression) are unaffected.
+vi.mock('@claude-flow/memory', () => {
+  throw new Error('simulated @claude-flow/memory init failure (regression harness)');
+});
 
 describe('bridge failure diagnostics', () => {
   beforeEach(() => {

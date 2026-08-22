@@ -28,6 +28,7 @@ import type {
   IAttentionBridge,
   IDAGBridge,
 } from './types.js';
+import type { UserRole, LegalErrorCode } from './types.js';
 import {
   ClauseExtractInputSchema,
   RiskAssessInputSchema,
@@ -37,6 +38,8 @@ import {
   ClauseType,
   RiskCategory,
   RiskSeverity,
+  RolePermissions,
+  LegalErrorCodes,
 } from './types.js';
 import { createAttentionBridge } from './bridges/attention-bridge.js';
 import { createDAGBridge } from './bridges/dag-bridge.js';
@@ -59,6 +62,13 @@ export interface MCPTool<TInput = unknown, TOutput = unknown> {
 }
 
 /**
+ * Audit logger interface (attorney-client privilege protection)
+ */
+export interface ToolAuditLogger {
+  log(entry: Record<string, unknown>): Promise<void> | void;
+}
+
+/**
  * Tool execution context
  */
 export interface ToolContext {
@@ -68,6 +78,17 @@ export interface ToolContext {
     attention: IAttentionBridge;
     dag: IDAGBridge;
   };
+  /** User invoking the tool (for audit trails) */
+  userId?: string;
+  /** Roles held by the user; when present, RBAC (RolePermissions) is enforced */
+  userRoles?: UserRole[];
+  /** Audit logger — every invocation is logged when provided */
+  auditLogger?: ToolAuditLogger;
+  /** Matter isolation context */
+  matterContext?: {
+    matterId: string;
+    clientId: string;
+  };
 }
 
 /**
@@ -76,6 +97,141 @@ export interface ToolContext {
 export interface MCPToolResult<T = unknown> {
   content: Array<{ type: 'text'; text: string }>;
   data?: T;
+  /** Set to true when the invocation failed (validation, authorization, or execution error) */
+  isError?: boolean;
+}
+
+// ============================================================================
+// Governance: authorization, audit logging, error envelope
+// ============================================================================
+
+const TOOL_VERSION = '3.0.0-alpha.1';
+
+/**
+ * Build a structured error result
+ */
+function errorResult(code: LegalErrorCode, message: string, startTime: number): MCPToolResult<never> {
+  return {
+    isError: true,
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        success: false,
+        error: true,
+        code,
+        message,
+        durationMs: Date.now() - startTime,
+      }, null, 2),
+    }],
+  };
+}
+
+/**
+ * RBAC check: when the context carries userRoles, at least one role must
+ * grant access to the tool (per RolePermissions). Contexts without roles
+ * (no RBAC configured) are allowed.
+ */
+function isAuthorized(context: ToolContext, toolShortName: string): boolean {
+  if (context.userRoles === undefined) return true;
+  return context.userRoles.some(
+    role => (RolePermissions[role] ?? []).includes(toolShortName)
+  );
+}
+
+/**
+ * Write an audit log entry if the context provides an audit logger.
+ * Audit failures never break tool execution.
+ */
+async function writeAuditEntry(
+  context: ToolContext,
+  toolShortName: string,
+  document: string,
+  success: boolean
+): Promise<void> {
+  if (!context.auditLogger) return;
+  try {
+    await context.auditLogger.log({
+      timestamp: new Date().toISOString(),
+      userId: context.userId ?? 'anonymous',
+      userRole: context.userRoles?.[0],
+      matterId: context.matterContext?.matterId ?? 'unassigned',
+      toolName: toolShortName,
+      documentHash: simpleHash(document),
+      operationType: 'analyze',
+      resultSummary: success ? 'completed' : 'failed',
+      success,
+    });
+  } catch {
+    // Audit logging must never break tool execution
+  }
+}
+
+/**
+ * Wrap a tool implementation with authorization, input validation,
+ * audit logging, and a consistent error envelope.
+ */
+function createGovernedHandler<TInput, TOutput>(options: {
+  shortName: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schema: z.ZodType<TInput, z.ZodTypeDef, any>;
+  failureCode: LegalErrorCode;
+  getDocument: (input: TInput) => string;
+  execute: (validated: TInput, context: ToolContext, startTime: number) => Promise<TOutput>;
+}): (input: TInput, context: ToolContext) => Promise<MCPToolResult<TOutput>> {
+  return async (input, context) => {
+    const startTime = Date.now();
+
+    const rawDocument = ((): string => {
+      try {
+        const doc = options.getDocument(input);
+        return typeof doc === 'string' ? doc : '';
+      } catch {
+        return '';
+      }
+    })();
+
+    // Authorization (RBAC by role permissions)
+    if (!isAuthorized(context, options.shortName)) {
+      await writeAuditEntry(context, options.shortName, rawDocument, false);
+      return errorResult(
+        LegalErrorCodes.MATTER_ACCESS_DENIED,
+        `Access to '${options.shortName}' denied for roles: ${(context.userRoles ?? []).join(', ') || '(none)'}`,
+        startTime
+      );
+    }
+
+    // Input validation
+    let validated: TInput;
+    try {
+      validated = options.schema.parse(input);
+    } catch (error) {
+      const isTooBig = error instanceof z.ZodError
+        && error.issues.some(issue => issue.code === 'too_big');
+      const message = error instanceof z.ZodError
+        ? error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+        : error instanceof Error ? error.message : 'Validation failed';
+      await writeAuditEntry(context, options.shortName, rawDocument, false);
+      return errorResult(
+        isTooBig ? LegalErrorCodes.DOCUMENT_TOO_LARGE : LegalErrorCodes.INVALID_DOCUMENT_FORMAT,
+        message,
+        startTime
+      );
+    }
+
+    // Execution
+    try {
+      const result = await options.execute(validated, context, startTime);
+      await writeAuditEntry(context, options.shortName, options.getDocument(validated), true);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        data: result,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await writeAuditEntry(context, options.shortName, rawDocument, false);
+      return errorResult(options.failureCode, message, startTime);
+    }
+  };
 }
 
 // ============================================================================
@@ -94,15 +250,14 @@ export const clauseExtractTool: MCPTool<
   name: 'legal/clause-extract',
   description: 'Extract and classify clauses from legal documents',
   category: 'legal',
-  version: '3.0.0-alpha.1',
+  version: TOOL_VERSION,
   inputSchema: ClauseExtractInputSchema,
-  handler: async (input, context) => {
-    const startTime = Date.now();
-
-    try {
-      // Validate input
-      const validated = ClauseExtractInputSchema.parse(input);
-
+  handler: createGovernedHandler({
+    shortName: 'clause-extract',
+    schema: ClauseExtractInputSchema,
+    failureCode: LegalErrorCodes.CLAUSE_EXTRACTION_FAILED,
+    getDocument: input => input.document,
+    execute: async (validated, context, startTime) => {
       // Parse document and extract clauses
       const metadata = parseDocumentMetadata(validated.document);
       const clauses = await extractClauses(
@@ -131,24 +286,9 @@ export const clauseExtractTool: MCPTool<
         durationMs: Date.now() - startTime,
       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        data: result,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            durationMs: Date.now() - startTime,
-          }, null, 2),
-        }],
-      };
-    }
-  },
+      return result;
+    },
+  }),
 };
 
 // ============================================================================
@@ -167,14 +307,14 @@ export const riskAssessTool: MCPTool<
   name: 'legal/risk-assess',
   description: 'Assess contractual risks with severity scoring',
   category: 'legal',
-  version: '3.0.0-alpha.1',
+  version: TOOL_VERSION,
   inputSchema: RiskAssessInputSchema,
-  handler: async (input, context) => {
-    const startTime = Date.now();
-
-    try {
-      const validated = RiskAssessInputSchema.parse(input);
-
+  handler: createGovernedHandler({
+    shortName: 'risk-assess',
+    schema: RiskAssessInputSchema,
+    failureCode: LegalErrorCodes.RISK_ASSESSMENT_FAILED,
+    getDocument: input => input.document,
+    execute: async (validated, context, startTime) => {
       // Extract clauses first
       const clauses = await extractClauses(validated.document, undefined, 'US', context);
 
@@ -211,24 +351,9 @@ export const riskAssessTool: MCPTool<
         durationMs: Date.now() - startTime,
       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        data: result,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            durationMs: Date.now() - startTime,
-          }, null, 2),
-        }],
-      };
-    }
-  },
+      return result;
+    },
+  }),
 };
 
 // ============================================================================
@@ -247,14 +372,14 @@ export const contractCompareTool: MCPTool<
   name: 'legal/contract-compare',
   description: 'Compare two contracts with detailed diff and semantic alignment',
   category: 'legal',
-  version: '3.0.0-alpha.1',
+  version: TOOL_VERSION,
   inputSchema: ContractCompareInputSchema,
-  handler: async (input, context) => {
-    const startTime = Date.now();
-
-    try {
-      const validated = ContractCompareInputSchema.parse(input);
-
+  handler: createGovernedHandler({
+    shortName: 'contract-compare',
+    schema: ContractCompareInputSchema,
+    failureCode: LegalErrorCodes.COMPARISON_FAILED,
+    getDocument: input => input.baseDocument,
+    execute: async (validated, context, startTime) => {
       // Extract clauses from both documents
       const baseClauses = await extractClauses(validated.baseDocument, undefined, 'US', context);
       const compareClauses = await extractClauses(validated.compareDocument, undefined, 'US', context);
@@ -302,24 +427,9 @@ export const contractCompareTool: MCPTool<
         durationMs: Date.now() - startTime,
       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        data: result,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            durationMs: Date.now() - startTime,
-          }, null, 2),
-        }],
-      };
-    }
-  },
+      return result;
+    },
+  }),
 };
 
 // ============================================================================
@@ -338,14 +448,14 @@ export const obligationTrackTool: MCPTool<
   name: 'legal/obligation-track',
   description: 'Extract obligations, deadlines, and dependencies using DAG analysis',
   category: 'legal',
-  version: '3.0.0-alpha.1',
+  version: TOOL_VERSION,
   inputSchema: ObligationTrackInputSchema,
-  handler: async (input, context) => {
-    const startTime = Date.now();
-
-    try {
-      const validated = ObligationTrackInputSchema.parse(input);
-
+  handler: createGovernedHandler({
+    shortName: 'obligation-track',
+    schema: ObligationTrackInputSchema,
+    failureCode: LegalErrorCodes.OBLIGATION_PARSING_FAILED,
+    getDocument: input => input.document,
+    execute: async (validated, context, startTime) => {
       // Extract obligations
       let obligations = await extractObligations(
         validated.document,
@@ -398,24 +508,9 @@ export const obligationTrackTool: MCPTool<
         durationMs: Date.now() - startTime,
       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        data: result,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            durationMs: Date.now() - startTime,
-          }, null, 2),
-        }],
-      };
-    }
-  },
+      return result;
+    },
+  }),
 };
 
 // ============================================================================
@@ -434,14 +529,14 @@ export const playbookMatchTool: MCPTool<
   name: 'legal/playbook-match',
   description: 'Compare contract clauses against negotiation playbook',
   category: 'legal',
-  version: '3.0.0-alpha.1',
+  version: TOOL_VERSION,
   inputSchema: PlaybookMatchInputSchema,
-  handler: async (input, context) => {
-    const startTime = Date.now();
-
-    try {
-      const validated = PlaybookMatchInputSchema.parse(input);
-
+  handler: createGovernedHandler({
+    shortName: 'playbook-match',
+    schema: PlaybookMatchInputSchema,
+    failureCode: LegalErrorCodes.PLAYBOOK_INVALID,
+    getDocument: input => input.document,
+    execute: async (validated, context, startTime) => {
       // Parse playbook
       const playbook = parsePlaybook(validated.playbook);
 
@@ -493,24 +588,9 @@ export const playbookMatchTool: MCPTool<
         durationMs: Date.now() - startTime,
       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        data: result,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            durationMs: Date.now() - startTime,
-          }, null, 2),
-        }],
-      };
-    }
-  },
+      return result;
+    },
+  }),
 };
 
 // ============================================================================

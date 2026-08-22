@@ -6,7 +6,9 @@
  * and pre-training fallback.
  */
 import { describe, it, expect } from 'vitest';
-import { HNSWIndex } from '../../@claude-flow/memory/src/hnsw-index.js';
+// ../../ from __tests__/ already lands in v3/@claude-flow/ — the extra
+// "@claude-flow/" segment made this path unresolvable from any cwd.
+import { HNSWIndex } from '../../memory/src/hnsw-index.js';
 
 const DIM = 384;
 const NUM_SUB = 8;
