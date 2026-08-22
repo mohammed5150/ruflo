@@ -11,7 +11,7 @@ import { existsSync, readFileSync, statSync, openSync, readSync, closeSync } fro
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
-import { execFileSync, exec } from 'child_process';
+import { execFileSync, execFile } from 'child_process';
 import { promisify } from 'util';
 import { decodeKey, isEncryptionEnabled } from '../encryption/vault.js';
 import { isEncryptedBlob } from '../encryption/vault.js';
@@ -21,22 +21,29 @@ import {
   recordMemoryPackagePath,
 } from '../init/memory-package-resolver.js';
 
-// Promisified exec with proper shell and env inheritance for cross-platform support
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
- * Execute command asynchronously with proper environment inheritance
- * Critical for Windows where PATH may not be inherited properly
+ * Run a fixed binary with a static argv — no shell string is ever built
+ * (ADR-078). On Windows `shell: true` is required so .cmd shims (npm, npx,
+ * claude) resolve (#2770); every argv here is static, so that shim is not an
+ * injection surface. `combineStderr` is for tools that print to stderr.
  */
-async function runCommand(command: string, timeoutMs: number = 5000): Promise<string> {
-  const { stdout } = await execAsync(command, {
+async function runCommand(
+  file: string,
+  args: string[],
+  timeoutMs: number = 5000,
+  combineStderr: boolean = false
+): Promise<string> {
+  const { stdout, stderr } = await execFileAsync(file, args, {
     encoding: 'utf8' as BufferEncoding,
     timeout: timeoutMs,
-    shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh', // Use proper shell per platform
-    env: { ...process.env }, // Explicitly inherit full environment
-    windowsHide: true, // Hide window on Windows
+    shell: process.platform === 'win32',
+    env: { ...process.env }, // Explicitly inherit full environment (Windows PATH)
+    windowsHide: true,
   });
-  return (stdout as string).trim();
+  const out = combineStderr ? `${stdout}\n${stderr}` : (stdout as string);
+  return out.trim();
 }
 
 interface HealthCheck {
@@ -64,7 +71,7 @@ async function checkNodeVersion(): Promise<HealthCheck> {
 // Check npm version (async with proper env inheritance)
 async function checkNpmVersion(): Promise<HealthCheck> {
   try {
-    const version = await runCommand('npm --version');
+    const version = await runCommand('npm', ['--version']);
     const major = parseInt(version.split('.')[0], 10);
     if (major >= 9) {
       return { name: 'npm Version', status: 'pass', message: `v${version}` };
@@ -947,7 +954,7 @@ async function checkApiKeys(): Promise<HealthCheck> {
 // Check git (async with proper env inheritance)
 async function checkGit(): Promise<HealthCheck> {
   try {
-    const version = await runCommand('git --version');
+    const version = await runCommand('git', ['--version']);
     return { name: 'Git', status: 'pass', message: version.replace('git version ', 'v') };
   } catch {
     return { name: 'Git', status: 'warn', message: 'Not installed', fix: 'Install git from https://git-scm.com' };
@@ -963,7 +970,7 @@ async function checkGit(): Promise<HealthCheck> {
 // environment reasons (PATH, broken global config, EBADCWD, etc.).
 async function checkGitRepo(): Promise<HealthCheck> {
   try {
-    await runCommand('git rev-parse --is-inside-work-tree');
+    await runCommand('git', ['rev-parse', '--is-inside-work-tree']);
     return { name: 'Git Repository', status: 'pass', message: 'In a git repository' };
   } catch {
     // Walk parents of cwd for a .git directory before reporting "not a repo"
@@ -1239,7 +1246,9 @@ async function checkDiskSpace(): Promise<HealthCheck> {
       return { name: 'Disk Space', status: 'pass', message: 'Check skipped on Windows' };
     }
     // Use df -Ph for POSIX mode (guarantees single-line output even with long device names)
-    const output_str = await runCommand('df -Ph . | tail -1');
+    const dfOutput = await runCommand('df', ['-Ph', '.']);
+    const dfLines = dfOutput.split('\n').filter((l) => l.trim().length > 0);
+    const output_str = dfLines[dfLines.length - 1] || '';
     const parts = output_str.split(/\s+/);
     // POSIX format: Filesystem Size Used Avail Capacity Mounted
     const available = parts[3];
@@ -1262,7 +1271,7 @@ async function checkDiskSpace(): Promise<HealthCheck> {
 // Check TypeScript/build (async with proper env inheritance)
 async function checkBuildTools(): Promise<HealthCheck> {
   try {
-    const tscVersion = await runCommand('npx tsc --version', 10000); // tsc can be slow
+    const tscVersion = await runCommand('npx', ['tsc', '--version'], 10000); // tsc can be slow
     if (!tscVersion || tscVersion.includes('not found')) {
       return { name: 'TypeScript', status: 'warn', message: 'Not installed locally', fix: 'npm install -D typescript' };
     }
@@ -1320,7 +1329,7 @@ async function checkVersionFreshness(): Promise<HealthCheck> {
     // Query npm for latest version (using alpha tag since that's what we publish to)
     let latestVersion = currentVersion;
     try {
-      const npmInfo = await runCommand('npm view @claude-flow/cli@alpha version', 5000);
+      const npmInfo = await runCommand('npm', ['view', '@claude-flow/cli@alpha', 'version'], 5000);
       latestVersion = npmInfo.trim();
     } catch {
       // Can't reach npm registry - skip check
@@ -1933,7 +1942,7 @@ async function checkMetaharnessDeclaredPackages(): Promise<HealthCheck> {
 
 async function checkMetaharness(): Promise<HealthCheck> {
   try {
-    const version = await runCommand('npx -y metaharness@latest --version 2>&1', 15000);
+    const version = await runCommand('npx', ['-y', 'metaharness@latest', '--version'], 15000, true);
     // metaharness emits multi-line stdout; parse a version-shaped line.
     const versionMatch = version.match(/(\d+\.\d+\.\d+)/);
     if (!versionMatch) {
@@ -1960,7 +1969,7 @@ async function checkMetaharness(): Promise<HealthCheck> {
 
 async function checkClaudeCode(): Promise<HealthCheck> {
   try {
-    const version = await runCommand('claude --version');
+    const version = await runCommand('claude', ['--version']);
     // Parse version from output like "claude 1.0.0" or "Claude Code v1.0.0"
     const versionMatch = version.match(/v?(\d+\.\d+\.\d+)/);
     const versionStr = versionMatch ? `v${versionMatch[1]}` : version;
