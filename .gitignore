@@ -187,3 +187,9 @@ v3/@claude-flow/cli/plugins/
 # Node V8 compile cache emitted by workspace builds (NODE_COMPILE_CACHE) —
 # machine-local artifact keyed by node version, never source
 node-compile-cache/
+
+# Vitest JSON report consumed by scripts/ci-test-ratchet.mjs (uploaded as a
+# CI artifact, never source) and local test-run litter
+.test-results/
+test-database-provider.rvf
+tests/.tmp-ctx-test/
