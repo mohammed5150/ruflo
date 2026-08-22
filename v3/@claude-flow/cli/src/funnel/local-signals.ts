@@ -9,7 +9,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 export interface SecurityStatus {
   status: 'CLEAN' | 'ISSUES' | 'PENDING';
@@ -66,11 +66,20 @@ export function getSwarmStatus(): SwarmStatus {
   const isWindows = process.platform === 'win32';
 
   try {
-    const psCmd = isWindows
-      ? 'tasklist /FI "IMAGENAME eq node.exe" /NH 2>NUL | find /c /v "" 2>NUL || echo 0'
-      : 'ps aux 2>/dev/null | grep -c agentic-flow || echo "0"';
-    const ps = execSync(psCmd, { encoding: 'utf-8', timeout: 3000 });
-    activeAgents = Math.max(0, parseInt(ps.trim()) - 1);
+    if (isWindows) {
+      const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq node.exe', '/NH'], {
+        encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      // -1 excludes this node process itself (same as the old `find /c` count).
+      activeAgents = Math.max(0, out.split('\n').filter((l) => l.trim().length > 0).length - 1);
+    } else {
+      const out = execFileSync('ps', ['aux'], {
+        encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024,
+      });
+      // No -1 here: the old `grep -c agentic-flow` counted the grep process
+      // itself and subtracted it back out; filtering in JS has no such extra.
+      activeAgents = out.split('\n').filter((l) => l.includes('agentic-flow')).length;
+    }
     coordinationActive = activeAgents > 0;
   } catch {
     // ps/tasklist unavailable or timed out — report zero
@@ -82,7 +91,9 @@ export function getSwarmStatus(): SwarmStatus {
 /** Count of uncommitted-changed files (git status --short line count). */
 export function getGitUncommittedCount(): number | undefined {
   try {
-    const out = execSync('git status --porcelain 2>/dev/null', { encoding: 'utf-8', timeout: 3000 });
+    const out = execFileSync('git', ['status', '--porcelain'], {
+      encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+    });
     const lines = out.split('\n').filter((l) => l.trim().length > 0);
     return lines.length;
   } catch {

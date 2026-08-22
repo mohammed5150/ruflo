@@ -33,7 +33,7 @@
  * Refs: ADR-135, ADR-133, iter 29 finding, #2156
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   GaiaQuestion,
 } from './gaia-loader.js';
@@ -133,9 +133,11 @@ function resolveApiKey(override?: string): string {
   const fromEnv = process.env['ANTHROPIC_API_KEY'];
   if (fromEnv) return fromEnv;
   try {
-    return execSync(
-      'gcloud secrets versions access latest --secret=ANTHROPIC_API_KEY',
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+    return execFileSync(
+      process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud',
+      ['secrets', 'versions', 'access', 'latest', '--secret=ANTHROPIC_API_KEY'],
+      // shell only on Windows (.cmd shim); argv is fully static — no injection surface.
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32' },
     ).trim();
   } catch {
     throw new Error(

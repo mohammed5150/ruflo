@@ -10,7 +10,7 @@ import {
 } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   RvfaWriter, type RvfaHeader, type RvfaBootConfig, type RvfaModelConfig,
 } from './rvfa-format.js';
@@ -184,8 +184,7 @@ export class RvfaBuilder {
   }
 
   private buildRuntimeSection(): Buffer {
-    let nodeVersion = 'v22.0.0';
-    try { nodeVersion = execSync('node --version', { encoding: 'utf-8' }).trim(); } catch { /* keep default */ }
+    const nodeVersion = process.version;
 
     return jsonBuf({
       type: 'runtime',
@@ -198,7 +197,13 @@ export class RvfaBuilder {
   private buildRufloSection(): Buffer {
     let packageMeta: Record<string, unknown> | null = null;
     try {
-      const raw = execSync('npm pack ruflo@latest --dry-run --json 2>/dev/null', { encoding: 'utf-8', timeout: 15_000 });
+      const raw = execFileSync(
+        process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        ['pack', 'ruflo@latest', '--dry-run', '--json'],
+        // shell only on Windows: .cmd shims cannot be spawned directly since
+        // the CVE-2024-27980 hardening; the argv here is fully static.
+        { encoding: 'utf-8', timeout: 15_000, stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' },
+      );
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) packageMeta = parsed[0];
     } catch { /* manifest-only fallback */ }
