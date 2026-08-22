@@ -52,14 +52,103 @@ benchmark → optimize → receipt → handoff → separately authorized publish
 
 ### Key Packages
 
+All packages live under `v3/@claude-flow/` (a pnpm workspace, glob `@claude-flow/*`).
+Versions drift independently — read each `package.json` for truth.
+
 | Package | Path | Purpose |
 |---------|------|---------|
-| `@claude-flow/cli` | `v3/@claude-flow/cli/` | CLI entry point (26 commands) |
-| `@claude-flow/codex` | `v3/@claude-flow/codex/` | Dual-mode Claude + Codex collaboration |
-| `@claude-flow/guidance` | `v3/@claude-flow/guidance/` | Governance control plane |
-| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | 17 hooks + 12 workers |
-| `@claude-flow/memory` | `v3/@claude-flow/memory/` | AgentDB + HNSW search |
-| `@claude-flow/security` | `v3/@claude-flow/security/` | Input validation, CVE remediation |
+| `@claude-flow/cli` | `v3/@claude-flow/cli/` | CLI entry point (50+ commands) — versioned in lockstep with root `claude-flow` and `ruflo` |
+| `@claude-flow/cli-core` | `v3/@claude-flow/cli-core/` | Lightweight CLI core (memory + hooks only) for fast cold-npx load |
+| `@claude-flow/shared` | `v3/@claude-flow/shared/` | Common types, events, utilities, core interfaces |
+| `@claude-flow/codex` | `v3/@claude-flow/codex/` | Dual-mode Claude + Codex collaboration (OpenAI Codex CLI adapter) |
+| `@claude-flow/guidance` | `v3/@claude-flow/guidance/` | Governance control plane — compile/retrieve/enforce/evolve session rules |
+| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | Event-driven lifecycle hooks + ReasoningBank learning + background workers |
+| `@claude-flow/memory` | `v3/@claude-flow/memory/` | AgentDB unification + HNSW search, hybrid SQLite+AgentDB backend (ADR-009) |
+| `@claude-flow/security` | `v3/@claude-flow/security/` | Input validation, path security, CVE remediation |
+| `@claude-flow/swarm` | `v3/@claude-flow/swarm/` | Swarm coordination, topologies, hive-mind, consensus |
+| `@claude-flow/mcp` | `v3/@claude-flow/mcp/` | Standalone MCP server: stdio/http/ws transports, pooling, tool registry |
+| `@claude-flow/neural` | `v3/@claude-flow/neural/` | SONA self-optimizing neural architecture, trajectory learning, RL algorithms |
+| `@claude-flow/embeddings` | `v3/@claude-flow/embeddings/` | Embedding service: OpenAI / Transformers.js / ONNX / mock, hyperbolic embeddings |
+| `@claude-flow/providers` | `v3/@claude-flow/providers/` | Multi-LLM provider system |
+| `@claude-flow/plugins` | `v3/@claude-flow/plugins/` | Unified Plugin SDK (worker/hook/provider) |
+| `@claude-flow/integration` | `v3/@claude-flow/integration/` | agentic-flow deep integration (ADR-001), TokenOptimizer |
+| `@claude-flow/aidefence` | `v3/@claude-flow/aidefence/` | AI Manipulation Defense System: prompt-injection detection, self-learning |
+| `@claude-flow/browser` | `v3/@claude-flow/browser/` | Browser automation for agents |
+| `@claude-flow/watermark` | `v3/@claude-flow/watermark/` | SynthID-Text-style LLM watermarking (Rust/WASM, ADR-383) |
+| `@claude-flow/plugin-agent-federation` | `v3/@claude-flow/plugin-agent-federation/` | Cross-install agent federation: zero-trust, PII gating, audit trails |
+| `@claude-flow/plugin-iot-cognitum` | `v3/@claude-flow/plugin-iot-cognitum/` | IoT Cognitum Seed device↔agent bridge |
+
+Also: `claims`, `deployment`, `performance`, `testing` (support packages), and
+`v3/@claude-flow/agents/` (YAML agent definitions, not an npm package).
+
+### Repository Layout
+
+| Path | Contents |
+|------|----------|
+| `v3/@claude-flow/` | The pnpm workspace with all `@claude-flow/*` packages (see table above) |
+| `v3/docs/adr/` | Architecture Decision Records — the only live ADR location (ADR-001 through ADR-384; legacy copies in `v3/implementation/adrs/`) |
+| `v3/crates/` | Rust crates: `ruflo-federation-peer` (QUIC federation peer + AIMDS safety pipeline), `ruflo-agntcy` (AGNTCY/SLIM transport + CASA enforcement, ADR-380), `ruflo-watermark` (standalone workspace backing `@claude-flow/watermark`) |
+| `crates/` | Symlink to `v3/crates/` for repo-scorecard tooling — edit under `v3/crates/` |
+| `v3/plugins/` | Experimental/domain plugins incl. `gastown-bridge` (own Cargo WASM workspace, excluded from root workspace) |
+| `plugins/` | 39 in-repo `ruflo-*` Claude Code plugins; registered in `.claude-plugin/marketplace.json` |
+| `plugin/` | The shipped Claude Code plugin payload (agents/commands/hooks/skills/scripts) |
+| `ruflo/` | The `ruflo` npm wrapper package (what users run via `npx ruflo`) |
+| `services/` | `cognitum-analytics` README stub — funnel API moved to `cognitum-one/ruflo-funnel-api` (ADR-311) |
+| `Cargo.toml` | Thin root Rust workspace (`ruflo-federation-peer`, `ruflo-agntcy`); `gastown-bridge` deliberately excluded (nested workspace) |
+
+## Development Workflow
+
+### Two independent installs (load-bearing)
+
+The repo has TWO dependency trees; a fresh clone needs both before anything builds:
+
+1. **Root** — npm workspace (`npm ci --legacy-peer-deps` is what CI uses). Root
+   `workspaces` lists only `codex`, `plugin-agent-federation`, and `security`;
+   lockfile is `package-lock.json`.
+2. **`v3/`** — separate pnpm workspace (`packageManager: pnpm@8.15.0`,
+   `v3/pnpm-workspace.yaml` → `@claude-flow/*`; lockfile `v3/pnpm-lock.yaml`).
+   `cd v3 && pnpm install --frozen-lockfile && pnpm -r build`.
+
+CI hard-fails if `v3/pnpm-lock.yaml` drifts from any v3 `package.json` —
+regenerate the lock in the SAME commit (`cd v3 && pnpm install --lockfile-only`).
+
+### Build / test / lint
+
+- **Test framework: vitest only** (root pins v3.x, v3 workspace pins v4.x — the
+  skew is intentional). No jest anywhere.
+- Root: `npm test` (vitest), `npm run test:security` (`v3/__tests__/security/`),
+  `npm run build` (tsc). Root `npm run lint` is currently a silent no-op
+  (the CLI package has no lint script; the `|| true` swallows it).
+- v3: `pnpm -r build`, `pnpm test` (`v3/vitest.config.ts`), `pnpm -r typecheck`.
+- CLI package: `cd v3/@claude-flow/cli && npm run build && npm test` — the bulk
+  of the suite lives in `v3/@claude-flow/cli/__tests__/` (issue-numbered files
+  like `channel-guard-2783.test.ts`); more tests in `v3/__tests__/`, per-package
+  `__tests__/`, and root `tests/`.
+- **CI test gating is a ratchet, not pass/fail**: `scripts/ci-test-ratchet.mjs`
+  compares failing test files against `scripts/ci-test-baseline.txt`. The
+  baseline may only shrink; any NEW failing file blocks the build. Never add to
+  the baseline to get green.
+- Node >= 20 everywhere; pnpm >= 8 in v3.
+
+### CI workflows (28 in `.github/workflows/`)
+
+Key ones: `ci.yml` (root pipeline + test ratchet), `v3-ci.yml` (pnpm build/test/
+typecheck + lockfile-drift guard + flywheel-proof replay), `codeql.yml`,
+`all-plugins-smoke.yml` (every plugin's smoke.sh), `no-metaharness-smoke.yml`
+and `no-agentbbs-smoke.yml` (removability guards), `metaharness-ci.yml`,
+`funnel-gates.yml` (ADR-310: zero promo output in CI), `helpers-manifest-guard.yml`,
+`oia-audit-weekly.yml`, `cve-audit.yml`, `federation-peer-rust.yml`,
+`stable-npm-release.yml` (manual, actor-gated to `ruvnet`).
+
+### Commit conventions (observed practice — CONTRIBUTING.md specifies none)
+
+- `fix(scope): …`, `docs(scope): …`, `chore(release): X → Y (#PR)` for bumps.
+- `dream(scope): #NNN … (evaluated, ACCEPT|ACCEPT-scoped) (#PR)` — commits from
+  the Nightly Dream Cycle Routine (external trigger, 06:00 UTC daily). Its
+  in-repo ledger is `docs/dream-cycle/LEDGER.md`; per-night writeups live in
+  `docs/dream-cycle/` and `docs/dream-cycles/` (both directories are live).
+- Local `.githooks/pre-commit` runs an API-key redaction check (no-ops with a
+  warning in a fresh clone where `dist-cjs/` isn't built).
 
 ## Concurrent Automated Development
 
@@ -367,43 +456,67 @@ This project is configured with Claude Flow V3 (Anti-Drift Defaults):
 - **HNSW Indexing**: Enabled (measured ~1.9x at N=20k, ~3.2x–4.7x at N=5k vs brute force; ANN wins above the crossover)
 - **Neural Learning**: Enabled (SONA)
 
-## V3 CLI Commands (26 Commands, 140+ Subcommands)
+## V3 CLI Commands (50+ Commands)
+
+> Registry of truth: `v3/@claude-flow/cli/src/commands/index.ts` (`commandLoaders`).
+> ~10 core commands load synchronously; everything else is lazy-loaded (PERF-03).
+> Don't trust per-command subcommand counts in docs — read the command file.
 
 ### Core Commands
 
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization with wizard, presets, skills, hooks |
-| `agent` | 8 | Agent lifecycle (spawn, list, status, stop, metrics, pool, health, logs) |
-| `swarm` | 6 | Multi-agent swarm coordination and orchestration |
-| `memory` | 11 | AgentDB memory with HNSW vector search (measured ~1.9x–4.7x vs brute force above crossover) |
-| `mcp` | 9 | MCP server management and tool execution |
-| `task` | 6 | Task creation, assignment, and lifecycle |
-| `session` | 7 | Session state management and persistence |
-| `config` | 7 | Configuration management and provider setup |
-| `status` | 3 | System status monitoring with watch mode |
-| `start` | 3 | Service startup and quick launch |
-| `workflow` | 6 | Workflow execution and template management |
-| `hooks` | 17 | Self-learning hooks + 12 background workers |
-| `hive-mind` | 6 | Queen-led Byzantine fault-tolerant consensus |
+| Command | Description |
+|---------|-------------|
+| `init` | Project initialization with wizard, presets, skills, hooks |
+| `start` / `status` | Service startup and system status monitoring |
+| `agent` | Agent lifecycle (spawn, list, status, stop, metrics, pool, health, logs) |
+| `swarm` | Multi-agent swarm coordination and orchestration |
+| `memory` | AgentDB memory with HNSW vector search (measured ~1.9x–4.7x vs brute force above crossover) |
+| `mcp` | MCP server management and tool execution |
+| `task` / `session` | Task lifecycle; session state management and persistence |
+| `config` | Configuration management and provider setup |
+| `workflow` | Workflow execution and template management |
+| `hooks` | Self-learning hooks (35 subcommands) + background workers |
+| `hive-mind` | Queen-led Byzantine fault-tolerant consensus |
+| `daemon` / `process` | Background worker daemon and process management |
+| `migrate` | V2 to V3 migration with rollback support |
+| `version` | Installed version; `--explain` for the ANV catalog breakdown |
 
 ### Advanced Commands
 
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `daemon` | 5 | Background worker daemon (start, stop, status, trigger, enable) |
-| `neural` | 5 | Neural pattern training (train, status, patterns, predict, optimize) |
-| `security` | 6 | Security scanning (scan, audit, cve, threats, validate, report) |
-| `performance` | 5 | Performance profiling (benchmark, profile, metrics, optimize, report) |
-| `providers` | 5 | AI providers (list, add, remove, test, configure) |
-| `plugins` | 5 | Plugin management (list, install, uninstall, enable, disable) |
-| `deployment` | 5 | Deployment management (deploy, rollback, status, environments, release) |
-| `embeddings` | 4 | Vector embeddings (embed, batch, search, init) — agentic-flow ONNX backend (speedup unverified, no benchmark) |
-| `claims` | 4 | Claims-based authorization (check, grant, revoke, list) |
-| `migrate` | 5 | V2 to V3 migration with rollback support |
-| `process` | 4 | Background process management |
-| `doctor` | 1 | System diagnostics with health checks |
-| `completions` | 4 | Shell completions (bash, zsh, fish, powershell) |
+| Command | Description |
+|---------|-------------|
+| `neural` | Neural pattern training with WASM SIMD (MicroLoRA + Flash Attention) |
+| `security` | Security scanning (scan, audit, cve, threats, validate, report) |
+| `performance` / `benchmark` | Performance profiling; self-learning pre-training benchmarks (SONA, EWC++, MoE) |
+| `providers` | AI providers (list, add, remove, test, configure) |
+| `plugins` | Plugin management against the IPFS registry |
+| `deployment` | Deployment management (deploy, rollback, status, environments, release) |
+| `embeddings` | Vector embeddings — agentic-flow ONNX backend (speedup unverified, no benchmark) |
+| `claims` / `issues` | Claims-based authorization; GitHub issue claims (ADR-016) |
+| `policy` | Agentic policy engine — evaluate actions, manage rules/approvals, verify decision ledger (ADR-324) |
+| `verify` | Verify installed artifact against the signed witness manifest (ADR-095) |
+| `analyze` | Git-diff change risk assessment and classification |
+| `route` | Q-learning task routing |
+| `guidance` | Guidance control plane — compile CLAUDE.md into a policy bundle |
+| `ruvector` | RuVector PostgreSQL bridge management |
+| `appliance` / `appliance-advanced` | Build / Ed25519-sign self-contained `ruflo.rvf` appliances |
+| `transfer-store` | Decentralized (IPFS) pattern/plugin registry |
+| `autopilot` | Autonomous loop-driven task completion state |
+| `gaia-bench` | GAIA benchmark harness (ADR-133) |
+| `metaharness` | MetaHarness dispatcher (ADR-150) — see the MetaHarness section |
+| `eject` | Lift a ruflo project into a renamed standalone harness |
+| `doctor` / `completions` / `update` / `cleanup` / `progress` | Diagnostics, shell completions, update checks, hook-script cleanup, progress |
+
+### Cognitum Surface (ADR-301..321 — commercial-adjacency layer)
+
+| Command | Description |
+|---------|-------------|
+| `auth` | Cognitum identity: login/logout/status (PKCE browser flow, device flow, `--token-stdin`) (ADR-306) |
+| `proxy` | Local Meta LLM Proxy — cloud routing toggle + tier selection; local backends by default (ADR-304/307/321) |
+| `funnel` / `settings` | Lifecycle-funnel state and user-facing preferences wrapper (ADR-305/311) |
+| `advisor` | Co-pilot advisor tip in the statusline insight ticker (ADR-316) |
+| `spinner` / `announcements` | Ruflo entries in Claude Code spinner verbs / startup announcements (ADR-318/319) |
+| `transport` | AGNTCY/SLIM swarm transport selection — no-ops to local when unconfigured (ADR-380) |
 
 ### Quick CLI Examples
 
@@ -506,7 +619,10 @@ claude -p --resume "abc-123" --fork-session "Try approach B: CQRS pattern"
 | `--permission-mode <mode>` | acceptEdits, bypassPermissions, plan, etc. |
 | `--mcp-config <json>` | Load MCP servers from JSON |
 
-## Available Agents (60+ Types)
+## Available Agents (100+ Types)
+
+> Definition files live in `.claude/agents/` (100+ markdown definitions, organized
+> by category) plus YAML definitions in `v3/@claude-flow/agents/`.
 
 ### Core Development
 `coder`, `reviewer`, `tester`, `planner`, `researcher`
@@ -725,17 +841,41 @@ npx claude-flow@v3alpha hooks task-completed -i task-123 --train-patterns true
 6. **Graceful shutdown** — send `{ type: "shutdown_request" }` before TeamDelete
 7. **Lead synthesizes** — when agents complete, review ALL results before responding to user
 
-## V3 Hooks System (17 Hooks + 12 Workers)
+## V3 Hooks System (35 Hook Subcommands + 12 Dispatch Workers)
+
+> Registry of truth: `hooksCommand.subcommands` in
+> `v3/@claude-flow/cli/src/commands/hooks.ts` (the in-code `hooks --help` text
+> is stale — it lists 27 of the 35).
 
 ### Hook Categories
 
 | Category | Hooks | Purpose |
 |----------|-------|---------|
 | **Core** | `pre-edit`, `post-edit`, `pre-command`, `post-command`, `pre-task`, `post-task` | Tool lifecycle |
-| **Session** | `session-start`, `session-end`, `session-restore`, `notify` | Context management |
-| **Intelligence** | `route`, `explain`, `pretrain`, `build-agents`, `transfer` | Neural learning |
-| **Learning** | `intelligence` (trajectory-start/step/end, pattern-store/search, stats, attention) | Reinforcement |
+| **Session** | `session-end`, `session-restore`, `notify`, `statusline` | Context management |
+| **Intelligence** | `route`, `explain`, `pretrain`, `build-agents`, `transfer`, `metrics` | Neural learning |
+| **Learning** | `intelligence` (SONA / MoE / HNSW, flag-driven) | Reinforcement |
+| **Coverage routing** | `coverage-route`, `coverage-suggest`, `coverage-gaps` | Route by test-coverage gaps |
+| **Model routing** | `model-route`, `model-outcome`, `model-stats`, `token-optimize` | Tiered model routing + token optimization |
 | **Agent Teams** | `teammate-idle`, `task-completed` | Multi-agent coordination |
+| **Workers** | `worker` (`list`, `dispatch`, `status`, `detect`, `cancel`) | Background worker management |
+| **v2 aliases (deprecated)** | `route-task`, `session-start`, `pre-bash`, `post-bash` | Back-compat |
+| **Internal refresh** | `refresh-funnel`, `refresh-advisor` | Detached cache refreshers |
+
+Library-only hook workers (no CLI subcommand, kill switches shown):
+- **channel-guard** (ADR-320) — inter-agent message sanitization gate in `SwarmCommunication.sendMessage`; disable with `CLAUDE_FLOW_SECURITY_CHANNEL_GATE=0`
+- **memory-poison-forensics** (ADR-377 Phase 2) — behavioral-anomaly detection over AgentDB write sequences; disable with `CLAUDE_FLOW_POISON_FORENSICS=0`
+- **official-hooks-bridge** — maps V3 hooks onto Claude Code's native hook events
+
+MCP-only hook tools (no CLI subcommand): `hooks_init`, `hooks_model-verify`, `hooks_codemod`.
+
+Note there are TWO worker pools: the 12 dispatch workers below
+(`swarm/src/workers/worker-dispatch.ts`, run via `hooks worker dispatch`) and a
+separate interval-scheduled monitoring pool in
+`v3/@claude-flow/hooks/src/workers/index.ts` (`performance`, `health`,
+`patterns`, `ddd`, `adr`, `security`, `learning`, `cache`, `git`, `swarm`) with
+its own MCP tools (`worker_run`, `worker_status`, `worker_alerts`, …). Don't
+conflate them.
 
 ### 12 Background Workers
 
@@ -796,7 +936,9 @@ The 4-step intelligence pipeline:
 3. **DISTILL** — Extract key learnings via LoRA
 4. **CONSOLIDATE** — Prevent catastrophic forgetting via EWC++
 
-## Embeddings Package (v3.0.0-alpha.12)
+## Embeddings Package (`@claude-flow/embeddings`)
+
+> Version truth: `v3/@claude-flow/embeddings/package.json`.
 
 Features:
 - **sql.js**: Cross-platform SQLite persistent cache (WASM, no native compilation)
@@ -956,6 +1098,9 @@ memory_search_unified({ query: "authentication security", limit: 5 })
 ### Versioning policy (stable releases — alpha series ended at 3.7.0-alpha.81, 2026-05-23)
 
 - **From 3.7.0 onward we ship stable semver**, NOT alpha pre-releases.
+- The three public packages (`@claude-flow/cli`, `claude-flow`, `ruflo`) are
+  versioned in lockstep (3.38.x series as of 2026-08). Version truth: the
+  package manifests and `npm view <pkg> dist-tags` — never this file.
 - Bump rules (semver discipline):
   - **PATCH** (3.7.0 → 3.7.1): bug fixes only, no API change, no schema change
   - **MINOR** (3.7.0 → 3.8.0): backward-compatible additions (new MCP tool, new flag, new agent type)
@@ -1377,71 +1522,43 @@ The 3-criteria AND-gate from ADR-150 review-round-1: `quality > 2% AND cost < 1%
 - [Research gist](https://gist.github.com/ruvnet/19d166ff9acf368c9da4172d91ac9113) — graded evidence
 - Upstream: `github.com/ruvnet/agent-harness-generator`
 
-## Optional Plugins (20 Available)
+## Plugins
 
-Plugins are distributed via IPFS and can be installed with the CLI. Browse and install from the official registry:
+There are THREE plugin trees — don't conflate them:
 
-```bash
-# List all available plugins
-npx claude-flow@v3alpha plugins list
+1. **`plugins/` (root)** — 39 in-repo `ruflo-*` Claude Code plugins. Registry
+   of truth: `.claude-plugin/marketplace.json` (each plugin also carries its
+   own `.claude-plugin/plugin.json`). `plugins/README.md` counts are stale;
+   trust the marketplace manifest. Each plugin ships a structural contract at
+   `plugins/<name>/scripts/smoke.sh`, aggregated by
+   `scripts/smoke-all-plugins.mjs` and enforced in CI (`all-plugins-smoke.yml`).
+   Notable: `ruflo-intelligence` (neural/self-learning surface),
+   `ruflo-metaharness` (ADR-150), `ruflo-swarm` (agent teams + topologies),
+   `ruflo-autopilot` (autonomous loop-driven completion),
+   `ruflo-graph-intelligence`, `ruflo-cost-tracker`, `ruflo-neural-trader`,
+   `ruflo-federation`, `ruflo-rvf`, `ruflo-sparc`.
+2. **`v3/plugins/`** — experimental/domain plugins (incl. `gastown-bridge`,
+   `agentic-qe`, `prime-radiant`, `quantum-optimizer`).
+3. **`plugin/` (singular)** — the shipped Claude Code plugin payload
+   (agents/commands/hooks/skills/scripts) bundled into the npm artifacts.
 
-# Install a plugin
-npx claude-flow@v3alpha plugins install @claude-flow/plugin-name
-
-# Enable/disable
-npx claude-flow@v3alpha plugins enable @claude-flow/plugin-name
-npx claude-flow@v3alpha plugins disable @claude-flow/plugin-name
-```
-
-### Core Plugins
-
-| Plugin | Version | Description |
-|--------|---------|-------------|
-| `@claude-flow/embeddings` | 3.0.0-alpha.1 | Vector embeddings with sql.js, HNSW, hyperbolic support |
-| `@claude-flow/security` | 3.0.0-alpha.1 | Input validation, path security, CVE remediation |
-| `@claude-flow/claims` | 3.0.0-alpha.8 | Claims-based authorization (check, grant, revoke, list) |
-| `@claude-flow/neural` | 3.0.0-alpha.7 | Neural pattern training (SONA, MoE, EWC++) |
-| `@claude-flow/plugins` | 3.0.0-alpha.1 | Plugin system core (manager, discovery, store) |
-| `@claude-flow/performance` | 3.0.0-alpha.1 | Performance profiling and benchmarking |
-
-### Integration Plugins
-
-| Plugin | Version | Description |
-|--------|---------|-------------|
-| `@claude-flow/plugin-agentic-qe` | 3.0.0-alpha.4 | Agentic quality engineering integration |
-| `@claude-flow/plugin-prime-radiant` | 0.1.5 | Prime Radiant intelligence integration |
-| `@claude-flow/plugin-gastown-bridge` | 3.0.0-alpha.1 | Gastown bridge protocol integration |
-| `@claude-flow/teammate-plugin` | 1.0.0-alpha.1 | Multi-agent teammate coordination |
-| `@claude-flow/plugin-code-intelligence` | 0.1.0 | Advanced code analysis and intelligence |
-| `@claude-flow/plugin-test-intelligence` | 0.1.0 | Intelligent test generation and gap analysis |
-| `@claude-flow/plugin-perf-optimizer` | 0.1.0 | Performance optimization automation |
-| `@claude-flow/plugin-neural-coordinator` | 0.1.0 | Neural network coordination across agents |
-| `@claude-flow/plugin-cognitive-kernel` | 0.1.0 | Core cognitive processing kernel |
-| `@claude-flow/plugin-quantum-optimizer` | 0.1.0 | Quantum-inspired optimization algorithms |
-| `@claude-flow/plugin-hyperbolic-reasoning` | 0.1.0 | Hyperbolic space reasoning for hierarchical data |
-
-### Domain-Specific Plugins
-
-| Plugin | Version | Description |
-|--------|---------|-------------|
-| `@claude-flow/plugin-healthcare-clinical` | 0.1.0 | Healthcare clinical workflow automation |
-| `@claude-flow/plugin-financial-risk` | 0.1.0 | Financial risk assessment and modeling |
-| `@claude-flow/plugin-legal-contracts` | 0.1.0 | Legal contract analysis and generation |
-
-### Plugin Development
+IPFS-registry plugins are managed with the CLI:
 
 ```bash
-# Create a new plugin from template
-npx claude-flow@v3alpha plugins create my-plugin
+npx claude-flow@latest plugins list
+npx claude-flow@latest plugins install @claude-flow/plugin-name
+npx claude-flow@latest plugins enable @claude-flow/plugin-name
+npx claude-flow@latest plugins disable @claude-flow/plugin-name
 
-# Test locally
-npx claude-flow@v3alpha plugins install ./path/to/my-plugin
-
-# Publish to registry (requires Pinata credentials)
-npx claude-flow@v3alpha plugins publish
+# Plugin development
+npx claude-flow@latest plugins create my-plugin
+npx claude-flow@latest plugins install ./path/to/my-plugin
+npx claude-flow@latest plugins publish   # requires Pinata credentials
 ```
 
-Registry source: IPFS via Pinata (`QmXbfEAaR7D2Ujm4GAkbwcGZQMHqAMpwDoje4583uNP834`)
+Registry source: IPFS via Pinata — the live CID is in
+`v3/@claude-flow/cli/src/plugins/store/discovery.ts` (`LIVE_REGISTRY_CID`); do
+not copy CIDs into docs, they rotate on every registry update.
 
 ## Support
 
