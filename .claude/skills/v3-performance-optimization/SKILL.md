@@ -1,6 +1,6 @@
 ---
 name: "V3 Performance Optimization"
-description: "Achieve aggressive v3 performance targets: 2.49x-7.47x Flash Attention speedup, 150x-12,500x search improvements, 50-75% memory reduction. Comprehensive benchmarking and optimization suite."
+description: "Pursue aggressive v3 performance targets — Flash Attention speedup, HNSW search acceleration, memory reduction — with in-tree benchmarks to verify every claim. Comprehensive benchmarking and optimization suite."
 ---
 
 # V3 Performance Optimization
@@ -17,7 +17,7 @@ Task("Performance baseline", "Establish v2 performance benchmarks", "v3-performa
 
 # Target validation (parallel)
 Task("Flash Attention", "Validate 2.49x-7.47x speedup target", "v3-performance-engineer")
-Task("Search optimization", "Validate 150x-12,500x search improvement", "v3-performance-engineer")
+Task("Search optimization", "Validate ~1.9x-4.7x (measured) search improvement", "v3-performance-engineer")
 Task("Memory optimization", "Achieve 50-75% memory reduction", "v3-performance-engineer")
 ```
 
@@ -333,8 +333,8 @@ class CPUOptimization {
 class PerformanceGates {
   async validateAllTargets(): Promise<ValidationReport> {
     const results = await Promise.all([
-      this.validateFlashAttention(),     // 2.49x-7.47x
-      this.validateSearchPerformance(),  // 150x-12,500x
+      this.validateFlashAttention(),     // unverified-in-tree
+      this.validateSearchPerformance(),  // ~1.9x-4.7x (measured)
       this.validateMemoryReduction(),    // 50-75%
       this.validateStartupTime(),        // <500ms
       this.validateSONAAdaptation()      // <0.05ms

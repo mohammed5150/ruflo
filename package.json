@@ -56,7 +56,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:security": "vitest run v3/__tests__/security/",
-    "lint": "node scripts/audit-hook-commands.mjs && node scripts/audit-plugin-manifest.mjs && node scripts/audit-skill-frontmatter.mjs",
+    "lint": "node scripts/audit-hook-commands.mjs && node scripts/audit-plugin-manifest.mjs && node scripts/audit-skill-frontmatter.mjs && node scripts/audit-child-process-ratchet.mjs",
     "typecheck": "tsc --noEmit",
     "security:audit": "npm audit --audit-level high",
     "security:fix": "npm audit fix",

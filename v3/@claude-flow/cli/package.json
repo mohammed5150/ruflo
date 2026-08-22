@@ -11,6 +11,9 @@
     "claude-flow": "bin/cli.js",
     "claude-flow-mcp": "bin/mcp-server.js"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "homepage": "https://github.com/ruvnet/claude-flow#readme",
   "bugs": {
     "url": "https://github.com/ruvnet/claude-flow/issues"

@@ -344,7 +344,7 @@ class PerformanceRegression {
 ## Coordination with V3 Team
 
 ### **Memory Specialist (Agent #7)**
-- Validate AgentDB 150x-12,500x search improvements
+- Validate AgentDB HNSW-accelerated search
 - Benchmark memory usage optimization
 - Test cross-agent memory sharing performance
 

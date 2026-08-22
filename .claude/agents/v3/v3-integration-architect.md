@@ -87,7 +87,7 @@ class FlashAttentionIntegration {
 
 ### **AgentDB Coordination**
 ```typescript
-// 150x-12,500x faster search via HNSW
+// ~1.9x-4.7x (measured) faster search via HNSW
 class AgentDBIntegration {
   async setupCrossAgentMemory(): Promise<void> {
     await this.agentdb.enableCrossAgentSharing({

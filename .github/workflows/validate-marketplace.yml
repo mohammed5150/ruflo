@@ -34,7 +34,19 @@ jobs:
               if (!m.author || !m.author.name) throw new Error('Manifest missing author: ' + manifest);
               console.log('  OK', m.name, m.version);
             }
-            console.log('All plugins validated.');
+            // Reverse coverage: every plugins/<dir> must be registered in the
+            // marketplace. A plugin dir that never lands in marketplace.json is
+            // invisible to users (this is how ruflo-deepseek-harness slipped
+            // through unregistered for several releases).
+            const registered = new Set(catalog.plugins.map(p => p.source.replace(/^\.\//, '').replace(/\/$/, '')));
+            const onDisk = fs.readdirSync('plugins', { withFileTypes: true })
+              .filter(e => e.isDirectory())
+              .map(e => 'plugins/' + e.name);
+            const unregistered = onDisk.filter(d => !registered.has(d));
+            if (unregistered.length) {
+              throw new Error('Plugin dirs missing from marketplace.json: ' + unregistered.join(', '));
+            }
+            console.log('All plugins validated; all ' + onDisk.length + ' plugin dirs registered.');
           "
       - name: Validate plugin structure
         run: |
