@@ -1,5 +1,5 @@
 ---
-name: "V3 Swarm Coordination"
+name: v3-swarm-coordination
 description: "15-agent hierarchical mesh coordination for v3 implementation. Orchestrates parallel execution across security, core, and integration domains following 10 ADRs with 14-week timeline."
 ---
 
@@ -21,9 +21,9 @@ Task("CVE remediation", "Fix CVE-1, CVE-2, CVE-3 vulnerabilities", "security-aud
 Task("Security testing", "Implement TDD security framework", "test-architect")
 
 # Core domain (Phase 2 - Parallel execution)
-Task("Memory unification", "Implement AgentDB 150x improvement", "v3-memory-specialist")
+Task("Memory unification", "Implement AgentDB HNSW memory unification", "v3-memory-specialist")
 Task("Integration architecture", "Deep agentic-flow@alpha integration", "v3-integration-architect")
-Task("Performance validation", "Validate 2.49x-7.47x targets", "v3-performance-engineer")
+Task("Performance validation", "Benchmark performance targets in-tree", "v3-performance-engineer")
 ```
 
 ## 15-Agent Swarm Architecture
@@ -111,7 +111,7 @@ const phase3 = async () => {
     Task("agentic-flow integration", "Eliminate 10,000+ duplicate lines", "v3-integration-architect"),
     Task("CLI modernization", "Enhance CLI with hooks system", "cli-hooks-developer"),
     Task("SONA integration", "Implement <0.05ms learning adaptation", "neural-learning-developer"),
-    Task("Performance benchmarking", "Validate 2.49x-7.47x targets", "v3-performance-engineer"),
+    Task("Performance benchmarking", "Benchmark performance targets in-tree", "v3-performance-engineer"),
     Task("Integration testing", "End-to-end system validation", "test-architect")
   ]);
 };
@@ -302,8 +302,8 @@ class SwarmLoadBalancer {
 
 ### Implementation Targets
 - [ ] **ADR Coverage**: All 10 ADRs implemented successfully
-- [ ] **Performance**: 2.49x-7.47x Flash Attention achieved
-- [ ] **Search**: 150x-12,500x AgentDB improvement validated
+- [ ] **Performance**: Flash Attention benchmarked in-tree (no verified speedup figure)
+- [ ] **Search**: ~1.9x-4.7x measured AgentDB HNSW improvement validated
 - [ ] **Code Reduction**: <5,000 lines (vs 15,000+)
 - [ ] **Security**: 90/100 security score achieved
 

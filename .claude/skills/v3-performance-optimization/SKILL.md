@@ -1,5 +1,5 @@
 ---
-name: "V3 Performance Optimization"
+name: v3-performance-optimization
 description: "Pursue aggressive v3 performance targets — Flash Attention speedup, HNSW search acceleration, memory reduction — with in-tree benchmarks to verify every claim. Comprehensive benchmarking and optimization suite."
 ---
 
@@ -16,7 +16,7 @@ Validates and optimizes claude-flow v3 to achieve industry-leading performance t
 Task("Performance baseline", "Establish v2 performance benchmarks", "v3-performance-engineer")
 
 # Target validation (parallel)
-Task("Flash Attention", "Validate 2.49x-7.47x speedup target", "v3-performance-engineer")
+Task("Flash Attention", "Benchmark Flash Attention in-tree (no verified speedup figure yet)", "v3-performance-engineer")
 Task("Search optimization", "Validate ~1.9x-4.7x (measured) search improvement", "v3-performance-engineer")
 Task("Memory optimization", "Achieve 50-75% memory reduction", "v3-performance-engineer")
 ```
@@ -29,7 +29,7 @@ Task("Memory optimization", "Achieve 50-75% memory reduction", "v3-performance-e
 │           FLASH ATTENTION               │
 ├─────────────────────────────────────────┤
 │  Baseline: Standard attention           │
-│  Target:   2.49x - 7.47x speedup       │
+│  Target:   unverified (benchmark in-tree)│
 │  Memory:   50-75% reduction             │
 │  Latency:  Sub-millisecond processing   │
 └─────────────────────────────────────────┘
@@ -41,7 +41,7 @@ Task("Memory optimization", "Achieve 50-75% memory reduction", "v3-performance-e
 │            SEARCH OPTIMIZATION         │
 ├─────────────────────────────────────────┤
 │  Current:  O(n) linear search           │
-│  Target:   150x - 12,500x improvement   │
+│  Target:   ~1.9x-4.7x measured (HNSW)   │
 │  Method:   HNSW indexing                │
 │  Latency:  <100ms for 1M+ entries       │
 └─────────────────────────────────────────┘
@@ -353,8 +353,8 @@ class PerformanceGates {
 ## Success Metrics
 
 ### Primary Targets
-- [ ] **Flash Attention**: 2.49x-7.47x speedup validated
-- [ ] **Search Performance**: 150x-12,500x improvement confirmed
+- [ ] **Flash Attention**: speedup benchmarked in-tree (no verified figure yet)
+- [ ] **Search Performance**: ~1.9x-4.7x measured HNSW improvement confirmed
 - [ ] **Memory Reduction**: 50-75% usage optimization achieved
 - [ ] **Startup Time**: <500ms cold start consistently
 - [ ] **SONA Adaptation**: <0.05ms learning response time
