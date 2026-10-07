@@ -831,19 +831,17 @@ Already in DB
     });
 
     it('should report errors for individual insight write failures', async () => {
-      // Create a read-only file to force a write error
+      // Put a directory where the topic file belongs so reading it fails
+      // with EISDIR. A chmod 0o444 file does not work here: root ignores
+      // file permissions, so the write succeeded when tests ran as root.
       const topicPath = bridge.getTopicPath('debugging');
-      fsSync.writeFileSync(topicPath, '# Debugging\n\n- Existing\n', 'utf-8');
-      fsSync.chmodSync(topicPath, 0o444); // read-only
+      fsSync.mkdirSync(topicPath, { recursive: true });
 
       await bridge.recordInsight(createTestInsight());
 
       const result = await bridge.syncToAutoMemory();
-      // Should have error from trying to write to read-only file
+      // Should have error from trying to write to the unwritable topic path
       expect(result.errors.length).toBeGreaterThan(0);
-
-      // Restore permissions for cleanup
-      fsSync.chmodSync(topicPath, 0o644);
     });
   });
 

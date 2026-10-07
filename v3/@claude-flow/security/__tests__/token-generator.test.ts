@@ -310,8 +310,12 @@ describe('TokenGenerator', () => {
       // This test verifies the comparison takes consistent time
       // regardless of where the mismatch occurs
       const token = generator.generate();
-      const mismatchEarly = 'X' + token.slice(1);
-      const mismatchLate = token.slice(0, -1) + 'X';
+      // Swap in a character that differs from the original. A fixed 'X'
+      // left the string unchanged whenever the random token already had
+      // 'X' at that position, which made this test fail intermittently.
+      const other = (c: string) => (c === 'X' ? 'Y' : 'X');
+      const mismatchEarly = other(token[0]) + token.slice(1);
+      const mismatchLate = token.slice(0, -1) + other(token[token.length - 1]);
 
       // Both comparisons should work (timing consistency is internal)
       expect(generator.compare(token, mismatchEarly)).toBe(false);
