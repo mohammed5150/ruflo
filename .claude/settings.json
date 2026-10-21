@@ -33,7 +33,9 @@
       "Bash(npx:*)",
       "mcp__claude-flow__*",
       "mcp__ruv-swarm__*",
-      "mcp__flow-nexus__*"
+      "mcp__flow-nexus__*",
+      "mcp__Firecrawl__firecrawl_gov_search",
+      "WebSearch"
     ],
     "deny": [
       "Read(./.env)",
